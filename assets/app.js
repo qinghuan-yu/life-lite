@@ -46,7 +46,7 @@ function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}
 
 function account(){return `<h1 class="page-title">我的</h1>${statusBlock()}${['water','bath'].map(p=>{
   const s=state[p];return `<section class="panel account-card"><div class="account-header"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="account-balance"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>${money(s.balance)==='—'?'—':'¥ '+money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
-}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.0 ${icon('arrow')}</span></button>`;}
+}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.1 ${icon('arrow')}</span></button>`;}
 function login(){
   const heading=`<button class="back" data-action="loginBack" aria-label="返回">${icon('back')}</button><h1 class="page-title">${names[provider]}</h1>${statusBlock()}`;
   if(loginMode==='choice')return `${heading}<div class="login-options" aria-label="选择登录方式">${btn('手机号登录','phoneLoginView','secondary')}${btn('支付宝登录','loginAlipay','secondary')}</div>`;
@@ -119,7 +119,8 @@ function showPrepared(d,intent='start'){
 async function refresh(){const d=await run('refresh');if(d)lastSync=Date.now();}
 async function doAction(action){
   if(action==='close'){closeSheet();return;}
-  if(action==='about'){sheet('<h2>一水生活</h2><div class="legal"><p>独立第三方客户端，账户与计费由原平台管理。</p><p>登录凭据在本机加密保存，不备份。相机仅用于扫码，画面不上传。</p><p>协议参考 drink_798（MIT），扫码使用 ZXing（Apache-2.0）。支付宝授权与支付使用支付宝 SDK。完整说明与许可随源码提供。</p></div>'+btn('关闭','close','secondary'));return;}
+  if(action==='about'){sheet('<h2>一水生活</h2><div class="legal"><p>接水与洗澡，一个入口。账户和计费由原平台管理。</p><p>登录凭据在本机加密保存，相机仅用于扫码。支付宝登录与支付使用支付宝 SDK。</p><p>协议参考 drink_798，扫码使用 ZXing。源码与许可见项目主页。</p></div><a class="project-link" href="https://github.com/qinghuan-yu/life-lite" data-action="project"><span>GitHub 项目</span>'+icon('arrow')+'</a>'+btn('关闭','close','secondary'));return;}
+  if(action==='project'){try{await bridge('project');}catch(e){toast(e.message);}return;}
   if(busy)return;
   if(action==='phoneLoginView'){loginMode='phone';error='';render();return;}
   if(action==='loginBack'){if(loginMode==='phone'){loginMode='choice';loginValues.password='';loginValues.code='';loginValues.captcha='';captcha='';error='';render();}else navigate(loginReturnView);return;}
@@ -168,14 +169,15 @@ document.addEventListener('keydown',e=>{
   pointerMotion=false;const panel=el('overlay').querySelector('.sheet');if(!panel)return;
   if(e.key==='Escape'&&!busy){e.preventDefault();closeSheet();}
   if(e.key==='Tab'){
-    const items=[...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),[tabindex="0"]')];if(!items.length){e.preventDefault();return;}
+    const items=[...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),a[href],[tabindex="0"]')];if(!items.length){e.preventDefault();return;}
     if(e.shiftKey&&(document.activeElement===items[0]||document.activeElement===panel)){e.preventDefault();items.at(-1).focus();}
     else if(!e.shiftKey&&(document.activeElement===items.at(-1)||document.activeElement===panel)){e.preventDefault();items[0].focus();}
   }
 });
 document.addEventListener('click',async e=>{
   if(e.target.classList.contains('modal-backdrop')){if(!busy)closeSheet();return;}
-  const b=e.target.closest('button');if(!b||b.disabled)return;
+  const b=e.target.closest('button,a[data-action]');if(!b||b.disabled)return;
+  if(b.tagName==='A')e.preventDefault();
   if(b.dataset.bill){const d=await run('prepareBill',{id:b.dataset.bill});if(d){billPrepared=d;sheet(`<h2>支付宝支付</h2><div class="hero-id">¥ ${money(d.amount)}</div><p>账单 ${escape(d.id)}。确认后将通过已签免密协议扣款，或跳转支付宝付款。</p><div class="actions">${btn('取消','close','secondary')}${btn('确认支付','confirmPay')}</div>`);}return;}
   if(b.dataset.payment){if(busy)return;paymentType=Number(b.dataset.payment);document.querySelectorAll('[data-payment]').forEach(x=>{const selected=Number(x.dataset.payment)===paymentType;x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});return;}
   if(b.dataset.nav){closeSheet();navigate(b.dataset.nav);return;}

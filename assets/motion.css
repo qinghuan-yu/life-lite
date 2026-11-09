@@ -31,6 +31,7 @@ header{padding:24px 0 28px}
 .account-card>.secondary{margin-top:20px}
 .about-row{display:flex;align-items:center;justify-content:space-between;width:100%;padding:20px 4px;font-size:13px}
 .about-row .small{display:flex;align-items:center;gap:9px}.about-row svg{width:15px;height:15px}
+.project-link{display:flex;align-items:center;justify-content:space-between;min-height:48px;margin:8px 0 20px;color:var(--green);font-size:14px;text-decoration:none}.project-link svg{width:18px;height:18px}.project-link:focus-visible{outline:3px solid #a7cb8b;outline-offset:2px}
 .official-link{float:right}.payment-label{font-size:12px;color:#657756;margin:-8px 0 18px}
 .payment-options{display:flex;gap:10px;margin:18px 0}
 .payment-option{flex:1;border:1px solid var(--line);padding:14px 7px;border-radius:12px;font-size:13px}

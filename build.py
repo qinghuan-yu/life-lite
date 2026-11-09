@@ -6,8 +6,7 @@ root=Path(__file__).resolve().parent
 parser=argparse.ArgumentParser()
 parser.add_argument('--sdk',required=True,help='包含 android-35 和 build-tools 的 SDK 路径')
 parser.add_argument('--work',default=str(root.parent.parent/'work'/'life-lite-build'))
-parser.add_argument('--output',default=str(root.parent/'life-lite-0.5.0.apk'))
-parser.add_argument('--test-json',help='运行离线测试所需 org.json jar')
+parser.add_argument('--output',default=str(root.parent/'life-lite-0.5.1.apk'))
 args=parser.parse_args()
 sdk=Path(args.sdk).resolve();work=Path(args.work).resolve();work.mkdir(parents=True,exist_ok=True)
 platform=next(sdk.rglob('android.jar'))
@@ -22,11 +21,6 @@ def run(*command):
     command=[str(x) for x in command]
     if Path(command[0]).stem.lower()=='javac':command.insert(1,'-J-Duser.language=en')
     subprocess.run(command,check=True,cwd=root)
-if args.test_json:
-    test_classes=work/'test-classes';test_classes.mkdir(exist_ok=True)
-    test_json=Path(args.test_json).resolve()
-    run(javac,'-encoding','UTF-8','-cp',test_json,'-d',test_classes,root/'src/cn/qingyu/lifelite/Protocol.java',root/'src/cn/qingyu/lifelite/Api.java',root/'tests/ProtocolTest.java')
-    run(java,'-cp',str(test_classes)+os.pathsep+str(test_json),'cn.qingyu.lifelite.ProtocolTest')
 compiled=work/'resources.zip';unsigned=work/'unsigned.apk';aligned=work/'aligned.apk'
 gen=work/'gen';gen.mkdir(exist_ok=True)
 classes=work/'classes';classes.mkdir(exist_ok=True)

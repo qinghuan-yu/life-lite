@@ -48,6 +48,7 @@ public final class MainActivity extends Activity {
             if(id==null||!id.matches("r[0-9]+")||payload==null||payload.length()>12000)return;
             if(action.equals("scan")) {runOnUiThread(()->{if(scanRequest!=null){error(id,"扫码正在进行");return;}scanRequest=id;if(checkSelfPermission(android.Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.CAMERA},11);else launchScan();});return;}
             if(action.equals("official")){runOnUiThread(()->{try {String p=new JSONObject(payload).optString("provider");String pkg=p.equals(Api.BATH)?"com.whxinna.userplatform":"com.cloudora.android";Intent i=getPackageManager().getLaunchIntentForPackage(pkg);if(i==null)throw new Exception("手机上没有找到对应应用");startActivity(i);reply(id,Protocol.obj("ok",true,"data",new JSONObject()));}catch(Exception e){error(id,e.getMessage());}});return;}
+            if(action.equals("project")){runOnUiThread(()->{try {startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/qinghuan-yu/life-lite")));reply(id,Protocol.obj("ok",true,"data",new JSONObject()));}catch(Exception e){error(id,"无法打开项目链接，请检查浏览器");}});return;}
             if(action.equals("loginAlipay")&&!loginInFlight.compareAndSet(false,true)){error(id,"支付宝登录正在进行");return;}
             worker.execute(()->{try {
                 JSONObject a=new JSONObject(payload);

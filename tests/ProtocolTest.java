@@ -91,7 +91,62 @@ public final class ProtocolTest {
             return r.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
     }
+    static class ZhuliAlipayNet extends ZhuliNet {
+        int logins=0;boolean missingProject=false,mismatch=false,rejectCandidate=false,badSignature=false,timeout=false;
+        String uid="17",project="school-fixture",before;
+        public byte[] call(String method,String url,JSONObject headers,JSONObject body) throws Exception {
+            JSONObject q=params(url);Object data;String key="6d5dbb85b949447a95ff8fda9a9b759b";
+            if(url.contains("/webapi/oauth/")) {
+                check(!headers.has("Authorization"),"授权与换取新会话不携带旧令牌");
+                check(signZhuli(q,key).equals(q.getString("sign")),"住理OAuth请求按平台规则签名");
+                if(url.contains("/alipay/auth_info?"))data="app_id=fixture&sign=a+b/c=";
+                else if(url.contains("/oauth/login?")) {
+                    logins++;if(timeout)throw new java.io.IOException("请求超时");
+                    JSONObject auth=objectData(q.getString("base64_authInfo")),system=objectData(q.getString("base64_systemInfo"));
+                    check(auth.getString("auth_code").equals("zhuli-sdk-fixture")&&auth.getString("oauth_type").equals("alipay_app")&&auth.getString("sign_type").equals("RSA"),"住理使用本人SDK授权码及官方OAuth类型");
+                    check(system.getString("deviceToken").isEmpty()&&q.getString("app_version").equals("3.12.11"),"住理登录不伪造手机标识");
+                    data=obj("platform_token","zhuli-candidate-fixture","user_info",obj("id",uid,"phone","13800000000","identity_code","candidate-identity","is_pwd",1));
+                    if(!missingProject)((JSONObject)data).put("server_info",obj("server_addr","https://fixture.whxinna.com","server_id","server-fixture","server_appid",project,"session_secret","candidate-secret","projectname","测试学校"));
+                }else throw new Exception("Unexpected OAuth endpoint");
+            }else if(url.contains("staff/get_user_detail_by_id?")) {
+                key="candidate-secret";
+                check(before.equals(store.data.toString()),"候选会话校验前不覆盖旧存储");
+                check(q.getString("identitycode").equals("candidate-identity")&&q.getString("pid").equals(project)&&q.getString("sign").equals(signZhuli(q,key)),"用候选身份及项目读取账户");
+                if(rejectCandidate)return obj("result",false,"err_msg","login_timeout").toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                data=obj("id",mismatch?"different":uid,"total_balance",8.25);
+            }else throw new Exception("登录流程不应调用消费接口");
+            JSONObject result=obj("result",true,"data",Base64.getUrlEncoder().encodeToString((data instanceof String?(String)data:data.toString()).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            result.put("sign",badSignature?"INVALID":signZhuli(result,key));
+            return result.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+    static void zhuliAlipayChecks() throws Exception {
+        Memory store=new Memory(obj("water",obj("token","water-session-fixture")));
+        ZhuliAlipayNet net=new ZhuliAlipayNet();net.store=store;net.before=store.data.toString();Api api=new Api(store,net);
+        check(new JSONObject(api.zhuliAlipayAuthInfo()).getString("data").equals("app_id=fixture&sign=a+b/c="),"住理授权响应封装保持原始加号");
+        check(net.logins==0&&net.before.equals(store.data.toString()),"获取授权参数不登录或覆盖账户");
+        JSONObject view=api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model");
+        check(view.getJSONObject("bath").getBoolean("loggedIn")&&view.getJSONObject("bath").getDouble("balance")==8.25,"住理支付宝验证账户后登录成功");
+        check(!view.toString().contains("candidate-")&&!store.data.toString().contains("zhuli-sdk-fixture"),"住理凭据不进页面且授权码不落盘");
+        check(store.data.getJSONObject("water").getString("token").equals("water-session-fixture"),"住理登录不改变慧生活会话");
+        net.before=store.data.toString();net.mismatch=true;
+        rejects(()->api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"拒绝住理账户校验身份不一致");net.mismatch=false;
+        net.missingProject=true;rejects(()->api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"未绑定学校不保存会话");net.missingProject=false;
+        net.rejectCandidate=true;rejects(()->api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"无效候选会话不能令旧会话过期");net.rejectCandidate=false;
+        net.badSignature=true;rejects(()->api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"拒绝候选账户响应签名错误");net.badSignature=false;
+        check(net.before.equals(store.data.toString()),"失败后完整保留原账户");
+        store.data.put("active_bath",obj("device","12345","phase","unknown"));store.data.put("devices_bath",new JSONArray().put(obj("id","12345","name","测试浴位")));
+        final Api pendingApi=new Api(store,net);net.before=store.data.toString();
+        pendingApi.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model");
+        check(store.data.has("active_bath")&&store.data.getJSONArray("devices_bath").length()==1,"同账户同项目重登保留未确认订单和收藏");
+        net.before=store.data.toString();net.uid="18";rejects(()->pendingApi.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"有订单时拒绝更换住理用户");net.uid="17";
+        net.project="different-project";rejects(()->pendingApi.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"有订单时拒绝切换学校");net.project="school-fixture";
+        check(net.before.equals(store.data.toString()),"跨账户或项目登录不丢失原订单");
+        int attempts=net.logins;net.timeout=true;rejects(()->pendingApi.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"授权码交换超时不自动重试");check(net.logins==attempts+1,"一次授权只交换一次");
+        rejects(()->pendingApi.loginZhuliAlipay("","15","test-model"),"空授权码不发送登录");
+    }
     public static void main(String[] args) throws Exception {
+        zhuliAlipayChecks();
         check(sign798(obj("un","13800000000","authCode","123456")).equals(md5("authCode=123456&un=13800000000aB3dF6hJ9kL2nP5rT8wY1eG4iM7oQ0v")),"798 登录签名排序");
         check(signZhuli(obj("z",0,"a"," 中 文 ","empty","","nil",JSONObject.NULL,"sign","ignored"),"key").equals(md5("a=中文&z=0&key=key").toUpperCase(Locale.ROOT)),"住理生活签名空值和空格规则");
         check(query(obj("x","a+b &中文")).equals("x=a%2Bb+%26%E4%B8%AD%E6%96%87"),"查询参数编码");

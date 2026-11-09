@@ -58,10 +58,13 @@ public class Api {
         p.put("sign",signZhuli(p,key));return p;
     }
     private Object zhuli(String path,JSONObject params,boolean platform) throws Exception {
+        return zhuli(path,params,platform,null);
+    }
+    private Object zhuli(String path,JSONObject params,boolean platform,JSONObject candidate) throws Exception {
         String base=ZBASE,key=ZKEY; JSONObject headers=new JSONObject();
         JSONObject p=new JSONObject(params.toString());
         if(!platform) {
-            JSONObject s=session(BATH),u=s.getJSONObject("user_info"),server=s.getJSONObject("server_info");
+            JSONObject s=candidate==null?session(BATH):candidate,u=s.getJSONObject("user_info"),server=s.getJSONObject("server_info");
             base=server.getString("server_addr").replaceAll("/+$","");
             URI uri=new URI(base);
             if(!"https".equalsIgnoreCase(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null||uri.getQuery()!=null) throw new Exception("项目服务器没有提供可用的 HTTPS 地址，请使用住理生活");
@@ -69,13 +72,13 @@ public class Api {
             if(key.isEmpty()) throw new Exception("项目会话信息不完整，请重新登录");
             p.put("user_id",u.get("id"));p.put("identitycode",u.getString("identity_code"));
             p.put("pid",server.get("server_appid"));p.put("appid",server.get("server_id"));
-        } else if(state.optJSONObject(BATH)!=null) headers.put("Authorization",state.getJSONObject(BATH).optString("platform_token"));
+        } else if(candidate==null&&state.optJSONObject(BATH)!=null) headers.put("Authorization",state.getJSONObject(BATH).optString("platform_token"));
         JSONObject r=json("GET",base+path+"?"+query(sign(p,key)),headers,null);
         if(!platform && r.has("sign") && !MessageDigestCompat.equal(signZhuli(r,key),r.optString("sign"))) throw new Exception("响应校验失败，请重新登录后查询订单");
         if(!r.optBoolean("result",false)) {
             String error=r.optString("err_msg",r.optString("msg","请求未成功"));
             if(error.equals("CAPTCHA_REQUIRED")||error.equals("CAPTCHA_ERROR")) throw new Exception("需要图形验证码，请点击获取并填写");
-            if(Arrays.asList("api_sign_error","login_timeout","login_error","forbidden","error_user_id").contains(error)) {if(!platform&&state.optJSONObject(BATH)!=null){state.getJSONObject(BATH).put("expired",true);save();}throw new Exception("住理生活登录已失效，请重新登录");}
+            if(Arrays.asList("api_sign_error","login_timeout","login_error","forbidden","error_user_id").contains(error)) {if(!platform&&candidate==null&&state.optJSONObject(BATH)!=null){state.getJSONObject(BATH).put("expired",true);save();}throw new Exception("住理生活登录已失效，请重新登录");}
             throw new Exception(r.optString("msg",error));
         }
         return decodeData(r.opt("data"));
@@ -110,6 +113,44 @@ public class Api {
         JSONArray favos=data.optJSONArray("favos");
         if(favos!=null){JSONArray normalized=new JSONArray();for(int i=0;i<favos.length();i++){JSONObject v=favos.getJSONObject(i);normalized.put(obj("id",v.get("id").toString(),"name",v.optString("name","饮水机")));}state.put("devices_water",normalized);}
         prepared.remove(WATER);prepared.remove("bill");state.put(WATER,saved);save();return snapshot();
+    }
+    /** 每次从住理平台获取签名授权请求，只交给原生 SDK。 */
+    public synchronized String zhuliAlipayAuthInfo() throws Exception {
+        JSONObject response=json("GET",ZBASE+"/webapi/oauth/alipay/auth_info?"+query(sign(new JSONObject(),ZKEY)),new JSONObject(),null);
+        if(!response.optBoolean("result",false))throw new Exception(response.optString("msg","住理生活授权参数获取失败"));
+        Object data=decodeData(response.opt("data"));
+        if(!(data instanceof String)||((String)data).isEmpty()||((String)data).length()>16000)throw new Exception("住理生活没有返回有效授权参数，请稍后重试");
+        // 官方桥接传入 JSON.stringify(response)，保留解码后的响应封装。
+        response.put("data",data);return response.toString();
+    }
+    /** 候选住理会话通过账户查询后才替换旧会话，授权码不保存。 */
+    public synchronized JSONObject loginZhuliAlipay(String code,String os,String model) throws Exception {
+        if(code==null||code.isEmpty()||code.length()>4096)throw new Exception("请重新进行支付宝授权");
+        JSONObject params=obj("authInfo",obj("auth_code",code,"oauth_type","alipay_app","sign_type","RSA"),"systemInfo",obj("appVersion","3.12.11","systemType","Android","systemVersion",os,"deviceModel",model,"deviceToken",""),"app_version","3.12.11");
+        JSONObject data;
+        try {data=object(zhuli("/webapi/oauth/login",params,true,new JSONObject()));}
+        catch(Exception e){if("授权信息未找到".equals(e.getMessage())||"openid错误".equals(e.getMessage()))throw new Exception("请先在住理生活用支付宝登录并完成手机号绑定");throw e;}
+        JSONObject user=data.optJSONObject("user_info"),server=data.optJSONObject("server_info");
+        if(user==null||server==null)throw new Exception("请先在住理生活完成手机号和学校绑定，再重新登录");
+        if(user.has("is_pwd")&&user.optInt("is_pwd",1)==0)throw new Exception("请先在住理生活完成账户设置，再重新登录");
+        String uid=user.optString("id"),phone=user.optString("phone");
+        if(uid.isEmpty()||user.optString("identity_code").isEmpty()||data.optString("platform_token").isEmpty()||server.optString("server_id").isEmpty()||server.optString("server_appid").isEmpty())throw new Exception("住理生活登录信息不完整，请在官方应用核对账户");
+        JSONObject candidate=obj("user_info",user,"server_info",server,"platform_token",data.getString("platform_token"),"phone",phone,"loginMethod","alipay");
+        JSONObject detail=object(zhuli("/webapi/v1/staff/get_user_detail_by_id",obj("id",user.get("id")),false,candidate));
+        if(!uid.equals(detail.optString("id")))throw new Exception("住理生活账户校验未通过，请重新登录");
+        JSONObject old=state.optJSONObject(BATH);boolean same=sameZhuliAccount(old,candidate);
+        if(state.has("active_bath")&&!same)throw new Exception("还有待确认洗浴订单，请使用原账户和原学校登录");
+        for(String key:keys(detail))if(!key.equals("identity_code"))user.put(key,detail.get(key));
+        Object balance=user.opt("total_balance");if(balance==null)balance=user.opt("balance");
+        candidate.put("balance",balance instanceof Number||balance instanceof String?balance:JSONObject.NULL);
+        if(!same){state.remove("devices_bath");state.remove("last_bath");}
+        prepared.remove(BATH);state.put(BATH,candidate);save();return snapshot();
+    }
+    private boolean sameZhuliAccount(JSONObject old,JSONObject candidate) throws Exception {
+        if(old==null||old.optJSONObject("user_info")==null||old.optJSONObject("server_info")==null)return false;
+        if(!old.getJSONObject("user_info").optString("id").equals(candidate.getJSONObject("user_info").optString("id")))return false;
+        for(String key:Arrays.asList("server_id","server_appid","server_addr"))if(!old.getJSONObject("server_info").optString(key).equals(candidate.getJSONObject("server_info").optString(key)))return false;
+        return true;
     }
     private JSONObject waterBill(String id) throws Exception {
         if(!id.matches("[A-Za-z0-9_-]{1,80}"))throw new Exception("账单号无效");

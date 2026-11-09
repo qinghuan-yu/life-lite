@@ -52,16 +52,20 @@ public final class MainActivity extends Activity {
             worker.execute(()->{try {
                 JSONObject a=new JSONObject(payload);
                 if(action.equals("loginAlipay")) {
-                    if(!a.optString("provider").equals(Api.WATER))throw new Exception("当前服务不支持此登录方式");
                     try {
+                        String provider=a.optString("provider");
+                        if(!provider.equals(Api.WATER)&&!provider.equals(Api.BATH))throw new Exception("未知服务");
                         try{getPackageManager().getPackageInfo("com.eg.android.AlipayGphone",0);}catch(PackageManager.NameNotFoundException missing){throw new Exception("请先安装支付宝");}
                         String authInfo;
-                        try(java.io.InputStream input=getResources().openRawResource(R.raw.alipay_login_request);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){
+                        if(provider.equals(Api.BATH))authInfo=api.zhuliAlipayAuthInfo();
+                        else try(java.io.InputStream input=getResources().openRawResource(R.raw.alipay_login_request);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){
                             byte[] buffer=new byte[1024];int n;while((n=input.read(buffer))!=-1)out.write(buffer,0,n);authInfo=new String(out.toByteArray(),java.nio.charset.StandardCharsets.UTF_8);
                         }
                         java.util.Map<String,String> result;
                         try{result=new com.alipay.sdk.app.AuthTask(MainActivity.this).authV2(authInfo,true);}catch(Exception sdkError){throw new Exception("无法完成支付宝授权，请返回重试");}
-                        JSONObject data=api.loginAlipay(Protocol.alipayAuthCode(result));reply(id,Protocol.obj("ok",true,"data",data));return;
+                        String code=Protocol.alipayAuthCode(result);
+                        JSONObject data=provider.equals(Api.BATH)?api.loginZhuliAlipay(code,Build.VERSION.RELEASE,Build.MODEL):api.loginAlipay(code);
+                        reply(id,Protocol.obj("ok",true,"data",data));return;
                     } finally {loginInFlight.set(false);}
                 }
                 if(action.equals("signAlipay")) {

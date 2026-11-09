@@ -12,6 +12,23 @@ header{padding:24px 0 28px}
 .login-prompt .muted{display:block;font-size:12px;color:var(--muted);margin:3px 0 25px}
 .login-method{display:flex;justify-content:space-between;align-items:center;margin:6px 0 0;font-size:14px}
 .login-options{display:grid;gap:14px;margin-top:30px}.login-options button{min-height:58px}
+.home-layout{display:flex;flex-direction:column;min-height:calc(100dvh - 190px)}
+.home-layout #feedback:empty{display:none}.home-layout .switcher{flex-shrink:0}
+.home-start{margin-top:auto;padding:28px 0 4px}.home-start button{min-height:56px}
+.current-device{padding:20px 22px 24px}.device-heading{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+.current-device-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:18px;background:#edf2e9;color:#48704e;margin:18px 0 22px}.current-device-icon svg{width:30px;height:30px}
+.current-device h2{font-size:25px;line-height:1.4;overflow-wrap:anywhere;margin-bottom:12px}
+.current-device .device-location{margin:0 0 20px;line-height:1.7}
+.device-identifier{border-top:1px solid var(--line);padding-top:18px;display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.device-identifier span{font-size:12px;color:var(--muted);flex-shrink:0}.device-identifier strong{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;text-align:right}
+.empty-device .current-device-icon{margin-top:4px}.empty-device h2{font-size:22px}.empty-device .text-button{display:flex;gap:6px;align-items:center}
+.favorite .device-name{text-align:left}.is-selected .device-icon{background:#deebd7;color:#2c5b3b}.selected-label{font-size:10px;color:#587d4e;white-space:nowrap}.favorite .delete{padding-right:0}
+.account-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid var(--line)}
+.account-header span{display:block;font-size:12px;line-height:1.7;color:var(--muted)}
+.account-balance{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 0;border-bottom:1px solid var(--line)}
+.account-balance span{font-size:12px;line-height:1.7;color:var(--muted);min-width:0}.account-balance strong{font-size:16px;font-weight:500;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.account-card .actions{margin-top:18px}.account-card>[data-account=signAlipay]{margin-top:8px}
+.account-card>.secondary{margin-top:20px}
 .about-row{display:flex;align-items:center;justify-content:space-between;width:100%;padding:20px 4px;font-size:13px}
 .about-row .small{display:flex;align-items:center;gap:9px}.about-row svg{width:15px;height:15px}
 .official-link{float:right}.payment-label{font-size:12px;color:#657756;margin:-8px 0 18px}

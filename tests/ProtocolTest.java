@@ -77,6 +77,7 @@ public final class ProtocolTest {
     }
     static class AlipayLoginNet implements Api.Transport {
         int logins=0,responseCode=0;boolean emptyAccount=false;String uid="ali-fixture";
+        JSONArray favorites=new JSONArray();
         public byte[] call(String method,String url,JSONObject headers,JSONObject body) throws Exception {
             JSONObject r;
             if(url.contains("/acc/login?")){
@@ -86,7 +87,7 @@ public final class ProtocolTest {
                 r=obj("code",responseCode,"data",obj("al",obj("token","candidate-token-fixture","uid",uid)));
             }else if(url.endsWith("/ui/app/master")){
                 check(headers.getString("Authorization").equals("candidate-token-fixture"),"用候选会话验证账户");
-                r=obj("code",0,"data",emptyAccount?new JSONObject():obj("account",obj("id",uid,"pn","13800000000"),"favos",new JSONArray()));
+                r=obj("code",0,"data",emptyAccount?new JSONObject():obj("account",obj("id",uid,"pn","13800000000"),"favos",favorites));
             }else throw new Exception("Unexpected login endpoint");
             return r.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
@@ -122,7 +123,7 @@ public final class ProtocolTest {
     }
     static void zhuliAlipayChecks() throws Exception {
         Memory store=new Memory(obj("water",obj("token","water-session-fixture")));
-        ZhuliAlipayNet net=new ZhuliAlipayNet();net.store=store;net.before=store.data.toString();Api api=new Api(store,net);
+        ZhuliAlipayNet net=new ZhuliAlipayNet();net.store=store;Api api=new Api(store,net);net.before=store.data.toString();
         check(new JSONObject(api.zhuliAlipayAuthInfo()).getString("data").equals("app_id=fixture&sign=a+b/c="),"住理授权响应封装保持原始加号");
         check(net.logins==0&&net.before.equals(store.data.toString()),"获取授权参数不登录或覆盖账户");
         JSONObject view=api.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model");
@@ -145,7 +146,38 @@ public final class ProtocolTest {
         int attempts=net.logins;net.timeout=true;rejects(()->pendingApi.loginZhuliAlipay("zhuli-sdk-fixture","15","test-model"),"授权码交换超时不自动重试");check(net.logins==attempts+1,"一次授权只交换一次");
         rejects(()->pendingApi.loginZhuliAlipay("","15","test-model"),"空授权码不发送登录");
     }
+    static void deviceMemoryChecks() throws Exception {
+        JSONObject bath=obj("phone","13800000000","user_info",obj("id",17,"identity_code","fixture-identity"),"server_info",obj("server_addr","https://fixture.whxinna.com","server_id","server-fixture","server_appid","school-fixture","session_secret","fixture-secret"));
+        Memory store=new Memory(obj("bath",bath,"water",obj("token","fixture"),"last_bath",obj("device","12345","name","最近浴位","orderId","old-order","phase","running"),"devices_water",new JSONArray().put(obj("id","water01","name","饮水机"))));
+        Api.Transport noNetwork=(m,u,h,b)->{throw new AssertionError("迁移与本地选择不得请求网络");};
+        Api first=new Api(store,noNetwork);JSONObject view=first.snapshot();
+        check(view.getJSONObject("bath").getJSONArray("devices").getJSONObject(0).getString("id").equals("12345"),"升级自动从已确认的旧洗浴记录恢复常用设备");
+        check(view.getJSONObject("bath").getString("selected").equals("12345"),"恢复最近使用的浴位作为默认选择");
+        first.dispatch("saveDevice",obj("provider","bath","id","12346","name","备用浴位"));
+        first.dispatch("selectDevice",obj("provider","bath","id","12345"));
+        Api restarted=new Api(store,noNetwork);
+        check(restarted.snapshot().getJSONObject("bath").getString("selected").equals("12345"),"显式选择跨重启保持");
+        restarted.dispatch("removeDevice",obj("provider","bath","id","12345"));
+        Api removed=new Api(store,noNetwork);
+        check(removed.snapshot().getJSONObject("bath").getJSONArray("devices").length()==1&&removed.snapshot().getJSONObject("bath").getString("selected").equals("12346"),"移除当前设备后选取剩余设备且重启不重复迁移已删除记录");
+        check(removed.snapshot().getJSONObject("water").getString("selected").equals("water01"),"两个平台的设备选择互不影响");
+        rejects(()->removed.dispatch("selectDevice",obj("provider","bath","id","not-in-list")),"不能选择列表外设备");
+        removed.dispatch("saveDevice",obj("provider","bath","id","12346","name","备用浴位"));
+        check(removed.snapshot().getJSONObject("bath").getJSONArray("devices").length()==1,"反复保存同一设备不重复");
+        store.data.put("active_bath",obj("device","12346","orderId","running-order","phase","running"));Api running=new Api(store,noNetwork);
+        rejects(()->running.dispatch("removeDevice",obj("provider","bath","id","12346")),"使用中的设备不能移除");
+        rejects(()->running.dispatch("selectDevice",obj("provider","bath","id","12346")),"使用过程中不能更换设备");
+        Memory failedStore=new Memory(obj("water",obj("token","fixture")));Net failedNet=new Net();failedNet.store=failedStore;failedNet.failStart=true;Api failedApi=new Api(failedStore,failedNet);
+        String ticket=failedApi.dispatch("prepare",obj("device","test02")).getString("ticket");
+        rejects(()->failedApi.dispatch("start",obj("ticket",ticket,"paymentType",21)),"未知启动结果等待订单确认");
+        check(new Api(failedStore,failedNet).snapshot().getJSONObject("water").getJSONArray("devices").length()==0,"未确认启动不算已用设备");
+        AlipayLoginNet cloudNet=new AlipayLoginNet();cloudNet.favorites.put(obj("id","cloud01","name","云端收藏"));
+        Memory cloudStore=new Memory(obj("water",obj("token","fixture","uid","ali-fixture"),"devices_water",new JSONArray().put(obj("id","local01","name","已用设备")),"selected_water","local01"));
+        Api cloudApi=new Api(cloudStore,cloudNet);cloudApi.loginAlipay("sdk-code-fixture");
+        check(cloudApi.snapshot().getJSONObject("water").getJSONArray("devices").length()==2&&cloudApi.snapshot().getJSONObject("water").getString("selected").equals("local01"),"同步云端收藏保留本地已用设备和默认选择");
+    }
     public static void main(String[] args) throws Exception {
+        deviceMemoryChecks();
         zhuliAlipayChecks();
         check(sign798(obj("un","13800000000","authCode","123456")).equals(md5("authCode=123456&un=13800000000aB3dF6hJ9kL2nP5rT8wY1eG4iM7oQ0v")),"798 登录签名排序");
         check(signZhuli(obj("z",0,"a"," 中 文 ","empty","","nil",JSONObject.NULL,"sign","ignored"),"key").equals(md5("a=中文&z=0&key=key").toUpperCase(Locale.ROOT)),"住理生活签名空值和空格规则");
@@ -204,12 +236,18 @@ public final class ProtocolTest {
         ZhuliNet znet=new ZhuliNet();znet.store=zstore;Api zapi=new Api(zstore,znet);
         JSONObject zp=zapi.dispatch("prepare",obj("provider","bath","device","12345"));
         zapi.dispatch("start",obj("provider","bath","ticket",zp.getString("ticket")));
+        check(zapi.snapshot().getJSONObject("bath").getJSONArray("devices").length()==1&&zapi.snapshot().getJSONObject("bath").getString("selected").equals("12345"),"洗浴启动成功自动记忆并选择设备");
         zapi.dispatch("sync",obj("provider","bath"));
         check(zstore.data.getJSONObject("active_bath").getString("phase").equals("running"),"洗浴恢复进行中状态");
         zapi.dispatch("stop",obj("provider","bath"));
         check(zstore.data.has("active_bath"),"结束回执不等于结算终态");
         znet.completed=true;zapi.dispatch("sync",obj("provider","bath"));
         check(!zstore.data.has("active_bath")&&zstore.data.getJSONObject("last_bath").getDouble("amount")==0.25,"服务器结算终态及金额");
+        check(zapi.snapshot().getJSONObject("bath").getJSONArray("devices").length()==1,"洗浴结束后保留常用设备且不重复");
+        String savedDeviceTicket=zapi.dispatch("prepare",obj("provider","bath","device","12345")).getString("ticket");
+        zapi.dispatch("savePreparedDevice",obj("provider","bath","ticket",savedDeviceTicket,"id","99999"));
+        check(znet.starts==1&&zapi.snapshot().getJSONObject("bath").getString("selected").equals("12345"),"设备管理只保存查询返回的设备，不启动也不信任页面伪造的ID");
+        rejects(()->zapi.dispatch("start",obj("provider","bath","ticket",savedDeviceTicket)),"保存设备后开始前必须重新查询");
         znet.tamper=true;rejects(()->zapi.dispatch("sync",obj("provider","bath")),"拒绝响应签名不匹配");znet.tamper=false;
         znet.malformed=true;rejects(()->zapi.dispatch("prepare",obj("provider","bath","device","12345")),"异常订单列表不能当成无订单");znet.malformed=false;
         znet.present=false;znet.completed=false;znet.failStart=true;

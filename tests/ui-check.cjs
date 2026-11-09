@@ -8,10 +8,12 @@ const assert=require('node:assert/strict');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
     window.calls=[];
-    window.fixture={water:{loggedIn:true,phone:'138****0000',balance:4.5,devices:[{id:'10001',name:'测试饮水机'}]},bath:{loggedIn:true,phone:'138****0000',balance:9.8,project:'测试学校',devices:[]}};
+    window.fixture={water:{loggedIn:true,phone:'138****0000',balance:4.5,selected:'10001',devices:[{id:'10001',name:'测试饮水机'}]},bath:{loggedIn:true,phone:'138****0000',balance:9.8,project:'测试学校',devices:[]}};
     window.NativeLife={call(id,action,json){const p=JSON.parse(json);calls.push({action,...p});setTimeout(()=>{
       let data=structuredClone(fixture);
-      if(action==='prepare')data={ticket:'device-ticket',id:p.device,name:'测试饮水机',payments:[21,91],billing:'按设备原费率计费'};
+      if(action==='prepare'){data={ticket:'device-ticket',id:p.device,name:'测试饮水机',payments:[21,91],billing:'按设备原费率计费'};window.preview=data;}
+      if(action==='savePreparedDevice'){fixture[p.provider].devices=[{id:preview.id,name:preview.name},...fixture[p.provider].devices.filter(d=>d.id!==preview.id)];fixture[p.provider].selected=preview.id;data=structuredClone(fixture);}
+      if(action==='selectDevice'){fixture[p.provider].selected=p.id;data=structuredClone(fixture);}
       if(action==='start'){fixture.water.active={device:'10001',phase:'running',paymentType:p.paymentType};data=structuredClone(fixture);}
       if(action==='bills')data={records:[{id:'bill1',dev:{name:'测试饮水机'},payment:0.25,status:1}]};
       if(action==='prepareBill')data={ticket:'bill-ticket',id:'bill1',amount:'0.25'};
@@ -22,20 +24,35 @@ const assert=require('node:assert/strict');
     },80);}};
   });
   await page.goto(pathToFileURL(path.resolve(__dirname,'../assets/index.html')).href);
-  await page.waitForFunction(()=>document.querySelector('#device-input')&&!busy);
+  await page.waitForFunction(()=>document.querySelector('[data-action=beginSelected]')&&!busy);
+  assert.equal(await page.locator('#device-input').count(),0);
+  assert((await page.locator('.current-device').innerText()).includes('10001'));
+  await page.locator('[data-nav=devices]').last().click();
+  await page.waitForSelector('#device-input');
   await page.locator('#device-input').fill('10001');
   await page.evaluate(()=>{window.inputBefore=el('device-input');el('device-input').setSelectionRange(2,2);fixture.water.balance=4.25;});
   await page.evaluate(()=>run('sync'));
   assert(await page.evaluate(()=>inputBefore===el('device-input')&&el('device-input').value==='10001'&&el('device-input').selectionStart===2),'输入和光标在刷新后保留');
-  await page.locator('[data-action=prepare]').click();
-  await page.waitForSelector('.sheet');
-  assert.equal(await page.locator('[data-payment="21"]').getAttribute('aria-pressed'),'true');
-  assert.equal(await page.evaluate(()=>calls.filter(x=>x.action==='start').length),0);
-  await page.locator('[data-payment="91"]').click();
-  await page.locator('[data-action=close]').click();
-  await page.waitForSelector('.sheet',{state:'detached'});
-  assert.equal(await page.locator('#device-input').inputValue(),'10001');
   await page.locator('[data-action=prepare]').click();await page.waitForSelector('.sheet');
+  assert.equal(await page.locator('[data-action=start]').count(),0);
+  assert.equal(await page.locator('[data-action=savePrepared]').count(),1);
+  await page.locator('[data-action=close]').click();await page.waitForSelector('.sheet',{state:'detached'});
+  assert.equal(await page.locator('#device-input').inputValue(),'10001');
+  await page.locator('#device-input').fill('10002');
+  await page.locator('[data-action=prepare]').click();await page.locator('[data-action=savePrepared]').click();
+  await page.waitForFunction(()=>!busy&&view==='home');await page.waitForSelector('.sheet',{state:'detached'});
+  assert((await page.locator('.current-device').innerText()).includes('10002'));
+  assert.equal(await page.evaluate(()=>calls.filter(x=>x.action==='start').length),0);
+  await page.locator('[data-action=beginSelected]').click();await page.waitForSelector('.sheet');
+  assert.equal(await page.locator('[data-payment="21"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.evaluate(()=>calls.filter(x=>x.action==='prepare').at(-1).device),'10002');
+  await page.locator('[data-payment="91"]').click();await page.locator('[data-action=close]').click();
+  await page.waitForSelector('.sheet',{state:'detached'});
+  assert.equal(await page.evaluate(()=>calls.filter(x=>x.action==='start').length),0);
+  await page.locator('[data-nav=devices]').last().click();
+  await page.locator('[data-device="1"].device-name').click();await page.waitForFunction(()=>!busy&&view==='home');
+  assert((await page.locator('.current-device').innerText()).includes('10001'));
+  await page.locator('[data-action=beginSelected]').click();await page.waitForSelector('.sheet');
   await page.evaluate(()=>{const b=document.querySelector('[data-action=start]');b.click();b.click();});
   await page.waitForFunction(()=>!busy&&fixture.water.active);
   assert.equal(await page.evaluate(()=>calls.filter(x=>x.action==='start').length),1);
@@ -93,6 +110,6 @@ const assert=require('node:assert/strict');
   if(process.env.LIFELITE_TEST_SCREENSHOT)await page.screenshot({path:process.env.LIFELITE_TEST_SCREENSHOT,fullPage:true});
   assert.deepEqual(errors,[]);
   const text=await page.locator('body').innerText();assert(!text.includes('EVERYDAY')&&!text.includes('让日常轻一点'));
-  console.log('PASS: input/cursor retention, explicit payment choice, no duplicate start, bill confirmation, cancellation, sheet interruption, reduced motion, no browser errors');
+  console.log('PASS: selected-device home, management-only lookup, save/select without start, fresh confirmation, input retention, duplicate prevention, payments and both login flows');
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

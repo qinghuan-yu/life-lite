@@ -26,21 +26,27 @@ function btn(label,action,kind='primary',extra=''){return `<button class="${kind
 function nav(){return `<nav class="nav" aria-label="主导航">${[['home','home','日常'],['devices','device','设备'],['account','user','我的']].map(([id,i,t])=>`<button data-nav="${id}" class="${view===id?'active':''}">${icon(i)}<span>${t}</span></button>`).join('')}</nav>`;}
 function switcher(){return `<div class="switcher" role="group" aria-label="选择服务">${['water','bath'].map(p=>`<button class="service ${p} ${provider===p?'selected':''}" data-provider="${p}" aria-pressed="${provider===p}">${provider===p?'<span class="selected-dot"></span>':''}${icon(p==='water'?'drop':'bath')}<strong>${verbs[p]}</strong><small>${names[p]}</small></button>`).join('')}</div>`;}
 function statusBlock(){return `<div id="feedback"><div class="error-box ${error?'':'hidden'}" role="alert">${escape(error)}</div></div>`;}
-function deviceList(manage=false){const list=state[provider].devices||[];if(!list.length)return '<div class="empty-line">暂无常用设备</div>';return list.map((d,i)=>`<div class="favorite"><button class="device-icon" data-device="${i}" aria-label="选择设备">${icon(provider==='water'?'drop':'bath')}</button><button class="device-name" data-device="${i}"><strong>${escape(d.name)}</strong><small>${escape(d.id)}</small></button>${manage?`<button class="delete" data-remove="${i}">移除</button>`:icon('arrow')}</div>`).join('');}
+function selectedDevice(){return (state[provider].devices||[]).find(d=>d.id===state[provider].selected);}
+function deviceList(){
+  const list=state[provider].devices||[];if(!list.length)return '<div class="empty-line">暂无常用设备</div>';
+  return list.map((d,i)=>{const selected=d.id===state[provider].selected;return `<div class="favorite ${selected?'is-selected':''}"><button class="device-icon" data-device="${i}" aria-label="选择${escape(d.name)}">${icon(provider==='water'?'drop':'bath')}</button><button class="device-name" data-device="${i}" aria-pressed="${selected}"><strong>${escape(d.name)}</strong><small>${escape(d.id)}</small></button>${selected?'<span class="selected-label">当前</span>':''}<button class="delete" data-remove="${i}">移除</button></div>`;}).join('');
+}
 function activePanel(){
   const a=state[provider].active;if(!a)return '';
   const titles={running:'正在'+verbs[provider],starting:'确认启动中',unknown:'启动待确认',stopping:'确认结束中',stop_unknown:'结束待确认',pending:'等待确认'};
   const uncertain=!['running','stopping'].includes(a.phase);
-  return `<section class="running ${uncertain?'uncertain':''}"><div class="eyebrow">${names[provider]}</div><h2>${titles[a.phase]||'订单待确认'}</h2><span class="device-number">${escape(a.device)}</span>${a.phase!=='running'?'<p>设备可能仍在计费，请刷新确认。</p>':''}${a.paymentType?`<div class="payment-label">${paymentNames[a.paymentType]||'平台支付'}</div>`:''}${btn('结束'+verbs[provider],'stop','danger')}${btn(icon('refresh')+'刷新','sync','text-button')}${a.idle?btn('核对设备已关闭','ackIdle','text-button'):''}${a.emptyConfirmed&&!a.orderId?btn('核对订单已结束','ackNoOrder','text-button'):''}<button class="text-button official-link" data-action="official">前往官方核对</button></section>`;
+  return `<section class="running ${uncertain?'uncertain':''}"><div class="eyebrow">${names[provider]}</div><h2>${titles[a.phase]||'订单待确认'}</h2><span class="device-number">${escape(a.device)}</span>${a.phase!=='running'?'<p>设备可能仍在计费，请刷新确认。</p>':''}${a.paymentType?`<div class="payment-label">${paymentNames[a.paymentType]||'平台支付'}</div>`:''}${btn(icon('refresh')+'刷新','sync','text-button')}${a.idle?btn('核对设备已关闭','ackIdle','text-button'):''}${a.emptyConfirmed&&!a.orderId?btn('核对订单已结束','ackNoOrder','text-button'):''}<button class="text-button official-link" data-action="official">前往官方核对</button></section>`;
 }
 function home(){
-  const s=state[provider],other=provider==='water'?'bath':'water';
-  return `${switcher()}${statusBlock()}${state[other].active?`<button class="active-other" data-provider="${other}">${verbs[other]}订单待结束 →</button>`:''}${activePanel()}${!s.loggedIn?`<section class="panel login-prompt"><div class="empty-icon">${icon('lock')}</div><h2>${names[provider]}</h2><span class="muted">${s.expired?'登录已过期':'未登录'}</span>${btn('登录','loginView')}</section>`:!s.active?`<section class="panel"><div class="account-strip"><div><span>${provider==='bath'?escape(s.project||'余额'):'账户'}</span><br><strong>${provider==='bath'?'<small>¥</small>'+money(s.balance):escape(s.phone)}</strong></div><div class="status"><i class="dot"></i>已登录</div></div><div class="entry"><input id="device-input" aria-label="设备号" placeholder="输入设备号" autocomplete="off" value="${escape(deviceValues[provider])}"><button class="scan" data-action="scan" aria-label="扫描设备二维码">${icon('scan')}</button></div>${btn('查询设备','prepare')}</section>`:''}<div class="section-title"><span>常用设备</span><button class="text-button" data-nav="devices">管理</button></div>${deviceList()}${s.last?`<div class="hint">设备已结束${s.last.amount!=null?' · ¥'+money(s.last.amount):' · 费用请查账单'}</div>`:''}`;
+  const s=state[provider],other=provider==='water'?'bath':'water',device=selectedDevice();
+  const content=!s.loggedIn?`<section class="panel login-prompt"><div class="empty-icon">${icon('lock')}</div><h2>${names[provider]}</h2><span class="muted">${s.expired?'登录已过期':'未登录'}</span>${btn('登录','loginView')}</section>`:s.active?activePanel():device?`<section class="panel current-device"><div class="device-heading"><span>当前设备</span><button class="text-button" data-nav="devices">更换</button></div><div class="current-device-icon">${icon(provider==='water'?'drop':'bath')}</div><h2>${escape(device.name)}</h2>${device.location?.trim()?`<p class="device-location">${escape(device.location)}</p>`:''}<div class="device-identifier"><span>设备号</span><strong>${escape(device.id)}</strong></div></section>`:`<section class="panel current-device empty-device"><div class="current-device-icon">${icon('device')}</div><h2>选择常用设备</h2><button class="text-button" data-nav="devices">前往设备管理 ${icon('arrow')}</button></section>`;
+  return `<div class="home-layout">${switcher()}${statusBlock()}${state[other].active?`<button class="active-other" data-provider="${other}">${verbs[other]}订单待结束 →</button>`:''}${content}${s.loggedIn?`<div class="home-start">${s.active?btn('结束'+verbs[provider],'stop','danger'):btn('开始'+verbs[provider],'beginSelected','primary',device?'':'data-unavailable="true" disabled')}</div>`:''}</div>`;
 }
-function devices(){return `<h1 class="page-title">常用设备</h1>${switcher()}${statusBlock()}${deviceList(true)}<div class="gap"></div>${btn(icon('plus')+'添加设备','addDevice','secondary')}`;}
+function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}${statusBlock()}${state[provider].loggedIn?`<section class="panel device-entry"><div class="entry"><input id="device-input" aria-label="设备号" placeholder="输入设备号" autocomplete="off" value="${escape(deviceValues[provider])}"><button class="scan" data-action="scan" aria-label="扫描设备二维码">${icon('scan')}</button></div>${btn('查询设备','prepare')}</section>`:btn('登录','loginView')}<div class="section-title"><span>常用设备</span></div>${deviceList()}`;}
+
 function account(){return `<h1 class="page-title">我的</h1>${statusBlock()}${['water','bath'].map(p=>{
-  const s=state[p];return `<section class="panel account-card"><div class="row"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="row"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>¥ ${money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
-}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.4.0 ${icon('arrow')}</span></button>`;}
+  const s=state[p];return `<section class="panel account-card"><div class="account-header"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="account-balance"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>${money(s.balance)==='—'?'—':'¥ '+money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
+}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.0 ${icon('arrow')}</span></button>`;}
 function login(){
   const heading=`<button class="back" data-action="loginBack" aria-label="返回">${icon('back')}</button><h1 class="page-title">${names[provider]}</h1>${statusBlock()}`;
   if(loginMode==='choice')return `${heading}<div class="login-options" aria-label="选择登录方式">${btn('手机号登录','phoneLoginView','secondary')}${btn('支付宝登录','loginAlipay','secondary')}</div>`;
@@ -106,9 +112,9 @@ function closeSheet(){
   back.animate([{opacity:1},{opacity:0}],{duration:160,fill:'forwards'});
   panel.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(20px)',opacity:0}],{duration:160,easing:'ease-out',fill:'forwards'}).finished.then(finish,finish);
 }
-function showPrepared(d){
+function showPrepared(d,intent='start'){
   prepared=d;const methods=d.payments||[];paymentType=methods.includes(21)?21:methods.includes(91)?91:0;
-  sheet(`<p class="eyebrow">${names[provider]}</p><h2>${escape(d.name)}</h2><div class="hero-id">${escape(d.id)}</div>${d.location?.trim()?`<p>${escape(d.location)}</p>`:''}${provider==='water'?`<div class="payment-options" role="group" aria-label="支付方式">${methods.map(t=>`<button data-payment="${t}" class="payment-option ${t===paymentType?'selected':''}" aria-pressed="${t===paymentType}">${escape(paymentNames[t])}</button>`).join('')}</div>`:''}<p>${escape(d.billing)}，开始后产生费用。</p><button class="text-button" data-action="favoritePrepared">${icon('plus')} 收藏</button><div class="actions">${btn('取消','close','secondary')}${btn('开始'+verbs[provider],'start')}</div>`);
+  sheet(`<p class="eyebrow">${names[provider]}</p><h2>${escape(d.name)}</h2><div class="hero-id">${escape(d.id)}</div>${d.location?.trim()?`<p>${escape(d.location)}</p>`:''}${intent==='start'&&provider==='water'?`<div class="payment-options" role="group" aria-label="支付方式">${methods.map(t=>`<button data-payment="${t}" class="payment-option ${t===paymentType?'selected':''}" aria-pressed="${t===paymentType}">${escape(paymentNames[t])}</button>`).join('')}</div>`:''}${intent==='start'?`<p>${escape(d.billing)}，开始后产生费用。</p>`:''}<div class="actions">${btn('取消','close','secondary')}${intent==='start'?btn('确认开始','start'):btn('设为常用','savePrepared')}</div>`);
 }
 async function refresh(){const d=await run('refresh');if(d)lastSync=Date.now();}
 async function doAction(action){
@@ -122,14 +128,14 @@ async function doAction(action){
   if(action==='confirmSignAlipay'){closeSheet();const d=await run('signAlipay');if(d)toast(d.message||'请以支付宝协议状态为准');return;}
   if(action==='confirmPay'){if(!billPrepared)return;const ticket=billPrepared.ticket;closeSheet();const d=await run('payAlipay',{ticket});if(d){toast(d.message);await doAction('bills');}return;}
   if(action==='loginView'){loginMode='choice';loginReturnView=view;loginValues={phone:'',password:'',captcha:'',code:''};captcha='';navigate('login');return;}
-  if(action==='addDevice'){navigate('home');toast('输入或扫描设备号，查询后收藏');return;}
   if(action==='official'){try{await bridge('official');}catch(e){toast(e.message);}return;}
   if(action==='scan'){const d=await run('scan');if(d){deviceValues[provider]=d.text;render();}return;}
   if(action==='prepare'){
     const device=el('device-input')?.value?.trim();if(!device){toast('请先输入或扫描设备号');return;}
-    const d=await run('prepare',{device});if(d)showPrepared(d);return;
+    const d=await run('prepare',{device});if(d)showPrepared(d,'manage');return;
   }
-  if(action==='favoritePrepared'){if(!prepared)return;const d=await run('saveDevice',{id:prepared.id,name:prepared.name});if(d)toast('已加入常用设备');return;}
+  if(action==='beginSelected'){const device=selectedDevice();if(!device){navigate('devices');return;}const d=await run('prepare',{device:device.id});if(d)showPrepared(d);return;}
+  if(action==='savePrepared'){if(!prepared)return;const d=await run('savePreparedDevice',{ticket:prepared.ticket});if(d){closeSheet();navigate('home');}return;}
   if(action==='start'){if(!prepared)return;const ticket=prepared.ticket;closeSheet();const d=await run('start',{ticket,paymentType});if(d)await run('sync');return;}
   if(action==='stop'){await run('stop');return;}
   if(action==='sync'){await run('sync');lastSync=Date.now();return;}
@@ -175,7 +181,7 @@ document.addEventListener('click',async e=>{
   if(b.dataset.nav){closeSheet();navigate(b.dataset.nav);return;}
   if(b.dataset.provider){if(busy)return;provider=b.dataset.provider;error='';render();if(state[provider].loggedIn)await run('sync');return;}
   if(b.dataset.account){if(busy)return;provider=b.dataset.p;await doAction(b.dataset.account);return;}
-  if(b.dataset.device!=null){if(busy)return;const d=state[provider].devices[+b.dataset.device];deviceValues[provider]=d.id;navigate('home');if(!state[provider].loggedIn)toast('请先登录');return;}
+  if(b.dataset.device!=null){if(busy)return;const d=state[provider].devices[+b.dataset.device];if(await run('selectDevice',{id:d.id}))navigate('home');return;}
   if(b.dataset.remove!=null){if(busy)return;const d=state[provider].devices[+b.dataset.remove];await run('removeDevice',{id:d.id});return;}
   if(b.dataset.action)await doAction(b.dataset.action);
 });

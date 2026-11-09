@@ -22,8 +22,45 @@ public class Api {
     private String captchaRandom="";
     private long smsSentAt=0;
     private final Map<String,JSONObject> prepared=new HashMap<>();
-    public Api(Store store,Transport net) throws Exception {this.store=store;this.net=net;this.state=store.read();}
+    public Api(Store store,Transport net) throws Exception {
+        this.store=store;this.net=net;this.state=store.read();
+        if(state.optInt("deviceMemoryVersion",0)<1) {
+            for(String p:Arrays.asList(WATER,BATH)) {
+                if(state.optJSONObject(p)==null)continue;
+                for(String kind:Arrays.asList("last_","active_")) {
+                    JSONObject record=state.optJSONObject(kind+p);
+                    if(record!=null&&confirmedUse(record))try{rememberUse(p,record);}catch(IllegalArgumentException ignored){}
+                }
+                ensureSelected(p);
+            }
+            state.put("deviceMemoryVersion",1);save();
+        }
+    }
     private void save() throws Exception {store.write(state);}
+    private boolean confirmedUse(JSONObject record) {return record.optBoolean("accepted",false)||!record.optString("orderId").isEmpty()||record.optString("phase").equals("running");}
+    private JSONArray devices(String p) {JSONArray list=state.optJSONArray("devices_"+p);return list==null?new JSONArray():list;}
+    private JSONObject findDevice(String p,String id) {JSONArray list=devices(p);for(int i=0;i<list.length();i++){JSONObject d=list.optJSONObject(i);if(d!=null&&id.equals(d.optString("id")))return d;}return null;}
+    private void ensureSelected(String p) throws Exception {
+        if(findDevice(p,state.optString("selected_"+p))!=null)return;
+        JSONArray list=devices(p);if(list.length()==0)state.remove("selected_"+p);else state.put("selected_"+p,list.getJSONObject(0).getString("id"));
+    }
+    private void rememberDevice(String p,String id,String name,String location,boolean select) throws Exception {
+        if(!id.matches(p.equals(BATH)?"[0-9]{1,20}":"[A-Za-z0-9_-]{1,80}"))throw new IllegalArgumentException("设备号无效");
+        JSONObject previous=findDevice(p,id),device=obj("id",id,"name",name.isEmpty()?id:name,"location",location.isEmpty()&&previous!=null?previous.optString("location"):location);
+        JSONArray fresh=new JSONArray().put(device),old=devices(p);
+        for(int i=0;i<old.length()&&fresh.length()<20;i++)if(!id.equals(old.getJSONObject(i).optString("id")))fresh.put(old.get(i));
+        state.put("devices_"+p,fresh);if(select)state.put("selected_"+p,id);ensureSelected(p);
+    }
+    private void rememberUse(String p,JSONObject record) throws Exception {rememberDevice(p,record.optString("device"),record.optString("name",p.equals(WATER)?"饮水机":"洗浴水控机"),record.optString("location"),true);}
+    private void mergeWaterFavorites(JSONArray remote) throws Exception {
+        JSONArray merged=new JSONArray(devices(WATER).toString());Set<String> seen=new HashSet<>();
+        for(int i=0;i<merged.length();i++)seen.add(merged.getJSONObject(i).optString("id"));
+        for(int i=0;i<remote.length()&&merged.length()<20;i++){
+            JSONObject v=remote.getJSONObject(i);String id=v.get("id").toString();
+            if(seen.add(id))merged.put(obj("id",id,"name",v.optString("name","饮水机")));
+        }
+        state.put("devices_"+WATER,merged);ensureSelected(WATER);
+    }
     private JSONObject session(String p) throws Exception {
         JSONObject s=state.optJSONObject(p);
         if(s==null) throw new Exception("请先登录"+(p.equals(WATER)?"慧生活798":"住理生活"));
@@ -109,9 +146,9 @@ public class Api {
         JSONObject old=state.optJSONObject(WATER);boolean same=old!=null&&uid.equals(old.optString("uid"));
         if((state.has("active_water")||state.has("payment_water"))&&!same)throw new Exception("还有待确认订单，请使用原支付宝账户登录");
         saved.put("uid",uid);saved.put("phone",account.optString("pn"));saved.put("loginMethod","alipay");saved.remove("expired");
-        if(!same){state.remove("devices_water");state.remove("last_water");}
+        if(!same){state.remove("devices_water");state.remove("last_water");state.remove("selected_water");}
         JSONArray favos=data.optJSONArray("favos");
-        if(favos!=null){JSONArray normalized=new JSONArray();for(int i=0;i<favos.length();i++){JSONObject v=favos.getJSONObject(i);normalized.put(obj("id",v.get("id").toString(),"name",v.optString("name","饮水机")));}state.put("devices_water",normalized);}
+        if(favos!=null)mergeWaterFavorites(favos);
         prepared.remove(WATER);prepared.remove("bill");state.put(WATER,saved);save();return snapshot();
     }
     /** 每次从住理平台获取签名授权请求，只交给原生 SDK。 */
@@ -143,7 +180,7 @@ public class Api {
         for(String key:keys(detail))if(!key.equals("identity_code"))user.put(key,detail.get(key));
         Object balance=user.opt("total_balance");if(balance==null)balance=user.opt("balance");
         candidate.put("balance",balance instanceof Number||balance instanceof String?balance:JSONObject.NULL);
-        if(!same){state.remove("devices_bath");state.remove("last_bath");}
+        if(!same){state.remove("devices_bath");state.remove("last_bath");state.remove("selected_bath");}
         prepared.remove(BATH);state.put(BATH,candidate);save();return snapshot();
     }
     private boolean sameZhuliAccount(JSONObject old,JSONObject candidate) throws Exception {
@@ -218,6 +255,12 @@ public class Api {
             case "bills":return bills(p);
             case "prepareBill":if(!p.equals(WATER))throw new Exception("当前服务不支持此支付方式");return prepareBill(a.getString("id"));
             case "saveDevice":return saveDevice(p,a);
+            case "savePreparedDevice":return savePreparedDevice(p,a.getString("ticket"));
+            case "selectDevice": {
+                session(p);String id=a.getString("id");if(findDevice(p,id)==null)throw new Exception("设备已移除，请重新选择");
+                if(state.has("active_"+p))throw new Exception("请先结束当前设备，再更换常用设备");
+                state.put("selected_"+p,id);prepared.remove(p);save();return snapshot();
+            }
             case "removeDevice":return removeDevice(p,a.getString("id"));
             case "ackIdle": {
                 JSONObject active=state.optJSONObject("active_"+p);
@@ -234,7 +277,7 @@ public class Api {
             }
             case "logout": {
                 if(state.optJSONObject("active_"+p)!=null||p.equals(WATER)&&state.has("payment_water")) throw new Exception("请先确认当前订单与支付结果，再退出账户");
-                state.remove(p);state.remove("devices_"+p);state.remove("last_"+p);prepared.remove(p);save();return snapshot();
+                state.remove(p);state.remove("devices_"+p);state.remove("last_"+p);state.remove("selected_"+p);prepared.remove(p);save();return snapshot();
             }
             default:throw new Exception("未知操作");
         }
@@ -270,13 +313,16 @@ public class Api {
             saved.getJSONObject("user_info").getString("identity_code");
         }
         saved.put("phone",phone);
-        if(old!=null&&!phone.equals(old.optString("phone"))) {state.remove("devices_"+p);state.remove("last_"+p);}
+        boolean changed=old!=null&&(p.equals(BATH)?!sameZhuliAccount(old,saved):!phone.equals(old.optString("phone")));
+        if(changed&&state.has("active_"+p))throw new Exception("还有待确认订单，请使用原账户和原学校登录");
+        if(changed) {state.remove("devices_"+p);state.remove("last_"+p);state.remove("selected_"+p);}
         state.put(p,saved);save();return snapshot();
     }
     public synchronized JSONObject snapshot() throws Exception {
         JSONObject out=new JSONObject();
         for(String p:Arrays.asList(WATER,BATH)) {
             JSONObject s=state.optJSONObject(p),view=obj("loggedIn",s!=null&&!s.optBoolean("expired",false),"expired",s!=null&&s.optBoolean("expired",false),"devices",state.optJSONArray("devices_"+p)==null?new JSONArray():state.getJSONArray("devices_"+p));
+            view.put("selected",state.optString("selected_"+p));
             if(s!=null) {
                 String phone=s.optString("phone");view.put("phone",phone.length()==11?phone.substring(0,3)+"****"+phone.substring(7):"");
                 view.put("balance",s.opt("balance"));
@@ -293,7 +339,7 @@ public class Api {
             JSONObject d=water("/ui/app/master",new JSONObject()).getJSONObject("data");
             if(d.optJSONObject("account")==null) {s.put("expired",true);save();throw new Exception("登录已失效，请重新登录");}
             JSONArray f=d.optJSONArray("favos");
-            if(f!=null) {JSONArray normalized=new JSONArray();for(int i=0;i<f.length();i++){JSONObject v=f.getJSONObject(i);normalized.put(obj("id",v.get("id").toString(),"name",v.optString("name","饮水机")));}state.put("devices_"+p,normalized);}
+            if(f!=null)mergeWaterFavorites(f);
             JSONObject wallets=water("/acc/wallet/owner",new JSONObject()).getJSONObject("data");
             List<JSONObject> candidates=new ArrayList<>();
             if(wallets.optJSONObject("aw")!=null)candidates.add(wallets.getJSONObject("aw"));
@@ -332,6 +378,7 @@ public class Api {
             id=d.get("device_id").toString();
         }
         JSONObject ticket=obj("ticket",UUID.randomUUID().toString(),"time",System.currentTimeMillis(),"device",id,"raw",d,"name",d.optString("device_name",d.optString("name",p.equals(WATER)?"饮水机":"洗浴水控机")));
+        ticket.put("location",(d.optString("building_name","")+" "+d.optString("floor_name","")+" "+d.optString("room_name","")).trim());
         ticket.put("payments",payments);prepared.put(p,ticket);
         return obj("ticket",ticket.getString("ticket"),"id",id,"name",ticket.getString("name"),"payments",payments,"billing","按设备原费率计费","location",d.optString("building_name","")+" "+d.optString("floor_name","")+" "+d.optString("room_name",""));
     }
@@ -361,7 +408,7 @@ public class Api {
             params=obj("device_id",id,"send_to_device",1,"staff_id",session(p).getJSONObject("user_info").get("id"),"act","consume","net_type",bathNetwork(d),"port_name",0);
             z("device/collect_gprs_device_status",params);
         }
-        JSONObject active=obj("device",id,"name",ticket.getString("name"),"phase","starting","startedAt",System.currentTimeMillis());
+        JSONObject active=obj("device",id,"name",ticket.getString("name"),"location",ticket.optString("location"),"phase","starting","startedAt",System.currentTimeMillis());
         if(p.equals(WATER))active.put("paymentType",paymentType);
         state.put("active_"+p,active);save();
         try {
@@ -371,7 +418,7 @@ public class Api {
                 JSONObject result=object(z("consume/create_order",params));
                 active.put("orderId",result.get("order_id").toString());active.put("phase","starting");active.put("serverStatus",result.optString("status"));
             }
-            save();
+            rememberUse(p,active);save();
         } catch(Exception error) {
             active.put("phase","unknown");save();
             throw new Exception("开始结果未确认："+error.getMessage()+"。请刷新订单；不要重复开始。");
@@ -412,13 +459,13 @@ public class Api {
                 active.put("serverStatus",bill.optString("status"));
                 if(bill.has("consume_money"))active.put("amount",bill.get("consume_money"));
                 if(finished(bill))finish(p,active);
-                else if(bill.optString("status").equals("consuming"))active.put("phase","running");
+                else if(bill.optString("status").equals("consuming")){active.put("phase","running");rememberUse(p,active);}
                 else active.put("phase","pending");
             }
         }
         save();return snapshot();
     }
-    private void finish(String p,JSONObject active) throws Exception {state.put("last_"+p,active);state.remove("active_"+p);save();}
+    private void finish(String p,JSONObject active) throws Exception {if(confirmedUse(active))rememberUse(p,active);state.put("last_"+p,active);state.remove("active_"+p);save();}
     private JSONObject stop(String p) throws Exception {
         sync(p);JSONObject a=state.optJSONObject("active_"+p);
         if(a==null)throw new Exception("当前没有待结束订单");
@@ -449,18 +496,22 @@ public class Api {
         return obj("records",data==null?new JSONArray():data);
     }
     private JSONObject saveDevice(String p,JSONObject a) throws Exception {
+        session(p);
         String id=deviceId(a.getString("id"),p.equals(BATH)),name=a.optString("name",id);
         if(p.equals(WATER))water("/dev/favo",obj("did",id,"remove",0));
-        JSONArray list=state.optJSONArray("devices_"+p);if(list==null)list=new JSONArray();
-        JSONArray fresh=new JSONArray();fresh.put(obj("id",id,"name",name));
-        for(int i=0;i<list.length()&&fresh.length()<20;i++)if(!list.getJSONObject(i).optString("id").equals(id))fresh.put(list.get(i));
-        state.put("devices_"+p,fresh);save();return snapshot();
+        rememberDevice(p,id,name,a.optString("location"),true);prepared.remove(p);save();return snapshot();
+    }
+    private JSONObject savePreparedDevice(String p,String ticketId) throws Exception {
+        JSONObject ticket=prepared.get(p);
+        if(ticket==null||!ticketId.equals(ticket.optString("ticket"))||System.currentTimeMillis()-ticket.getLong("time")>120000)throw new Exception("设备信息已过期，请重新查询");
+        return saveDevice(p,obj("id",ticket.getString("device"),"name",ticket.getString("name"),"location",ticket.optString("location")));
     }
     private JSONObject removeDevice(String p,String id) throws Exception {
+        JSONObject active=state.optJSONObject("active_"+p);if(active!=null&&id.equals(active.optString("device")))throw new Exception("请先结束正在使用的设备");
         if(p.equals(WATER))water("/dev/favo",obj("did",id,"remove",1));
         JSONArray list=state.optJSONArray("devices_"+p),fresh=new JSONArray();
         if(list!=null)for(int i=0;i<list.length();i++)if(!list.getJSONObject(i).optString("id").equals(id))fresh.put(list.get(i));
-        state.put("devices_"+p,fresh);save();return snapshot();
+        state.put("devices_"+p,fresh);ensureSelected(p);prepared.remove(p);save();return snapshot();
     }
     private static class MessageDigestCompat {
         static boolean equal(String a,String b) {return java.security.MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8),b.getBytes(StandardCharsets.UTF_8));}

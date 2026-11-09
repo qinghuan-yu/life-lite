@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parent
 parser=argparse.ArgumentParser()
 parser.add_argument('--sdk',required=True,help='包含 android-35 和 build-tools 的 SDK 路径')
 parser.add_argument('--work',default=str(root.parent.parent/'work'/'life-lite-build'))
-parser.add_argument('--output',default=str(root.parent/'life-lite-0.4.0.apk'))
+parser.add_argument('--output',default=str(root.parent/'life-lite-0.5.0.apk'))
 parser.add_argument('--test-json',help='运行离线测试所需 org.json jar')
 args=parser.parse_args()
 sdk=Path(args.sdk).resolve();work=Path(args.work).resolve();work.mkdir(parents=True,exist_ok=True)

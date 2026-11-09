@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="loading">正在加載中</string>
+    <string name="loading_go_auth">前往支付寶授權</string>
+    <string name="loading_go_pay">前往支付寶付款</string>
+</resources>

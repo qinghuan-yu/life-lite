@@ -1,0 +1,28 @@
+/* 日常操作用轻量反馈，后台轮询保持静止。 */
+button{transition:transform 130ms ease-out,opacity 130ms ease-out}
+button:active:not(:disabled){transform:scale(.97)}
+header{padding:24px 0 28px}
+.page-title{font-size:27px;margin-bottom:25px}
+.service{transition:transform 130ms ease-out;min-height:139px}
+.service::after{content:"";position:absolute;inset:0;border:1px solid currentColor;border-radius:inherit;opacity:0;transition:opacity 180ms ease-out;pointer-events:none}
+.service.selected::after{opacity:.12}
+.selected-dot{animation:dot-in 180ms ease-out}
+@keyframes dot-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+.login-prompt{padding:24px}
+.login-prompt .muted{display:block;font-size:12px;color:var(--muted);margin:3px 0 25px}
+.login-method{display:flex;justify-content:space-between;align-items:center;margin:6px 0 0;font-size:14px}
+.about-row{display:flex;align-items:center;justify-content:space-between;width:100%;padding:20px 4px;font-size:13px}
+.about-row .small{display:flex;align-items:center;gap:9px}.about-row svg{width:15px;height:15px}
+.official-link{float:right}.payment-label{font-size:12px;color:#657756;margin:-8px 0 18px}
+.payment-options{display:flex;gap:10px;margin:18px 0}
+.payment-option{flex:1;border:1px solid var(--line);padding:14px 7px;border-radius:12px;font-size:13px}
+.payment-option.selected{border-color:#7b9c71;background:#e8f0e2;color:#274f36}
+.text-button svg{width:15px;height:15px;vertical-align:middle}
+.text-button{min-height:44px}
+.network-progress{width:15px;height:15px;border:2px solid #c0cdb8;border-top-color:#315d38;border-radius:50%;opacity:0;transition:opacity 150ms ease-out;animation:spin .8s linear infinite;animation-play-state:paused}
+.network-progress.loading{opacity:1;animation-play-state:running}
+.sheet{padding-bottom:max(26px,env(safe-area-inset-bottom));overscroll-behavior:contain;outline:none}
+#toast{display:block;pointer-events:none;opacity:0;transform:translateY(8px);transition:opacity 180ms ease-out,transform 180ms cubic-bezier(.22,1,.36,1)}
+#toast.visible{opacity:1;transform:translateY(0)}
+.nav button{min-height:48px}.nav button.active svg{stroke-width:2.2}
+@media(prefers-reduced-motion:reduce){button,button:active:not(:disabled){transform:none}.selected-dot,.network-progress{animation:none!important}#toast{transform:none;transition:opacity 100ms ease-out!important}}

@@ -1,0 +1,15 @@
+# 本地构建、签名与账户数据不进入仓库。
+work/
+build/
+node_modules/
+__pycache__/
+*.pyc
+*.apk
+*.idsig
+*.p12
+*.jks
+*.keystore
+*.pem
+.env
+.env.*
+local.properties

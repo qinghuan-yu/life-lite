@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="loading">Loading</string>
+    <string name="loading_go_auth">Go to Alipay for authorization</string>
+    <string name="loading_go_pay">Go to Alipay for payment</string>
+</resources>

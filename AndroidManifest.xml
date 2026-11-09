@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.qingyu.lifelite" android:versionCode="4" android:versionName="0.3.1">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <queries><package android:name="com.whxinna.userplatform"/><package android:name="com.cloudora.android"/><package android:name="com.eg.android.AlipayGphone"/></queries>
+    <application android:label="一水生活" android:theme="@style/AppTheme" android:icon="@drawable/ic_launcher" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+        <uses-library android:name="org.apache.http.legacy" android:required="false"/>
+        <activity android:name="com.alipay.sdk.app.H5PayActivity" android:configChanges="orientation|keyboardHidden|navigation|screenSize" android:exported="false" android:theme="@android:style/Theme.NoTitleBar"/>
+        <activity android:name="com.alipay.sdk.app.H5AuthActivity" android:configChanges="orientation|keyboardHidden|navigation|screenSize" android:exported="false" android:theme="@android:style/Theme.NoTitleBar"/>
+        <activity android:name="com.alipay.sdk.app.PayResultActivity" android:exported="true" android:launchMode="singleInstance" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <activity android:name="com.alipay.sdk.app.AlipayResultActivity" android:exported="true" android:launchMode="singleTask" android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="lifelitealipay"/></intent-filter>
+        </activity>
+        <activity android:name="com.alipay.sdk.app.H5OpenAuthActivity" android:exported="false" android:screenOrientation="behind" android:windowSoftInputMode="adjustResize|stateHidden"/>
+        <activity android:name="com.alipay.sdk.app.APayEntranceActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".ScannerActivity" android:screenOrientation="portrait" android:exported="false"/>
+    </application>
+</manifest>

@@ -9,11 +9,10 @@ let provider='water',view='home',busy=false,error='',prepared=null,captcha='',co
 let loginValues={phone:'',password:'',captcha:'',code:''};
 let loginMode='choice',loginReturnView='home';
 const deviceValues={water:'',bath:''},paymentNames={21:'支付宝免密',91:'慧生活钱包'};
-let paymentType=21,lastPage='',lastProvider='',sheetFocus=null,sheetClosing=false,pointerMotion=true,billPrepared=null;
+let paymentType=21,lastPage='',sheetFocus=null,sheetClosing=false,pointerMotion=true,billPrepared=null;
 const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
 const reduceMotion=()=>motionPreference.matches||!pointerMotion;
 const motionAnimations=new Set();
-let viewTransition=null;
 function animate(node,frames,duration,options={}){
   const tokens=getComputedStyle(document.documentElement);
   const animation=node.animate(frames,{duration:parseFloat(tokens.getPropertyValue('--motion-'+duration)),easing:tokens.getPropertyValue('--ease-out').trim(),...options});
@@ -23,24 +22,6 @@ function animate(node,frames,duration,options={}){
 }
 function finishMotion(){motionAnimations.forEach(a=>a.finish());}
 motionPreference.addEventListener('change',()=>{if(motionPreference.matches)finishMotion();});
-// 离场副本只用于短暂淡出，不保留表单值，也不参与焦点或点击。
-function captureView(node){
-  const opacity=getComputedStyle(node).opacity,rect=node.getBoundingClientRect(),copy=node.cloneNode(true);
-  copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
-  copy.querySelectorAll('input').forEach(n=>{n.value='';n.removeAttribute('value');});
-  copy.inert=true;copy.setAttribute('aria-hidden','true');copy.classList.add('motion-ghost');
-  Object.assign(copy.style,{left:rect.left+'px',top:rect.top+scrollY+'px',width:rect.width+'px',height:rect.height+'px',opacity});
-  return copy;
-}
-function crossfade(previous,current){
-  if(!previous)return;
-  document.body.append(previous);
-  const exit=animate(previous,[{opacity:previous.style.opacity},{opacity:0}],'view');
-  const enter=animate(current,[{opacity:0},{opacity:1}],'view');
-  const transition={clear(){previous.remove();exit.cancel();enter.cancel();if(viewTransition===transition)viewTransition=null;}};
-  viewTransition=transition;
-  enter.finished.then(()=>transition.clear(),()=>transition.clear());
-}
 const pending=new Map();
 const names={water:'慧生活798',bath:'住理生活'},verbs={water:'接水',bath:'洗澡'};
 function bridge(action,payload={}) {
@@ -76,7 +57,7 @@ function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}
 
 function account(){return `<h1 class="page-title">我的</h1>${statusBlock()}${['water','bath'].map(p=>{
   const s=state[p];return `<section class="panel account-card"><div class="account-header"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="account-balance"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>${money(s.balance)==='—'?'—':'¥ '+money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
-}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.3 ${icon('arrow')}</span></button>`;}
+}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.4 ${icon('arrow')}</span></button>`;}
 function login(){
   const heading=`<button class="back" data-action="loginBack" aria-label="返回">${icon('back')}</button><h1 class="page-title">${names[provider]}</h1>${statusBlock()}`;
   if(loginMode==='choice')return `${heading}<div class="login-options" aria-label="选择登录方式">${btn('手机号登录','phoneLoginView','secondary')}${btn('支付宝登录','loginAlipay','secondary')}</div>`;
@@ -97,13 +78,6 @@ function patchNode(current,next){
 function render(){
   const content=view==='home'?home():view==='devices'?devices():view==='account'?account():login();
   const key=view+(view==='login'?':'+provider+':'+loginMode:''),changed=key!==lastPage;
-  const serviceChanged=provider!==lastProvider&&(view==='home'||view==='devices');
-  let previous=null;
-  if(lastPage&&(changed||serviceChanged)){
-    viewTransition?.clear();
-    // 登录表单直接切换，避免把凭据复制进离场画面。
-    if(!reduceMotion()&&view!=='login'&&!lastPage.startsWith('login'))previous=captureView(changed?el('page'):el('page').querySelector('.service-content'));
-  }
   const template=document.createElement('template');
   template.innerHTML=`<header><div class="brand">${icon('drop')}一水生活</div><i class="network-progress ${busy?'loading':''}" aria-label="正在加载"></i></header><main id="page">${content}</main><div id="navigation">${view!=='login'?nav():''}</div>`;
   if(!lastPage)el('app').append(template.content.cloneNode(true));
@@ -113,13 +87,13 @@ function render(){
     if(changed)el('page').replaceWith(fresh.querySelector('#page').cloneNode(true));else patchNode(el('page'),fresh.querySelector('#page'));
     patchNode(el('navigation'),fresh.querySelector('#navigation'));
   }
-  crossfade(previous,changed?el('page'):el('page').querySelector('.service-content'));
-  lastPage=key;lastProvider=provider;updateBusy();
+  lastPage=key;updateBusy();
 }
 function updateBusy(){
   document.querySelectorAll('button').forEach(b=>{if(b.dataset.action!=='close')b.disabled=busy||b.dataset.unavailable==='true';});
   const progress=document.querySelector('.network-progress');if(progress)progress.classList.toggle('loading',busy);
   el('app').setAttribute('aria-busy',String(busy));
+  el('overlay').setAttribute('aria-busy',String(busy));
 }
 function navigate(next){if(busy)return;if(view==='login'&&next!=='login'){loginValues.password='';loginValues.code='';loginValues.captcha='';captcha='';}view=next;error='';render();window.scrollTo(0,0);}
 async function run(action,payload={},options={}){
@@ -223,7 +197,7 @@ document.addEventListener('click',async e=>{
   if(b.dataset.bill){const d=await run('prepareBill',{id:b.dataset.bill});if(d){billPrepared=d;sheet(`<h2>支付宝支付</h2><div class="hero-id">¥ ${money(d.amount)}</div><p>账单 ${escape(d.id)}。确认后将通过已签免密协议扣款，或跳转支付宝付款。</p><div class="actions">${btn('取消','close','secondary')}${btn('确认支付','confirmPay')}</div>`);}return;}
   if(b.dataset.payment){if(busy)return;paymentType=Number(b.dataset.payment);document.querySelectorAll('[data-payment]').forEach(x=>{const selected=Number(x.dataset.payment)===paymentType;x.classList.toggle('selected',selected);x.setAttribute('aria-pressed',String(selected));});return;}
   if(b.dataset.nav){closeSheet();navigate(b.dataset.nav);return;}
-  if(b.dataset.provider){if(busy)return;provider=b.dataset.provider;error='';render();if(state[provider].loggedIn)await run('sync');return;}
+  if(b.dataset.provider){if(busy||provider===b.dataset.provider)return;provider=b.dataset.provider;error='';render();if(state[provider].loggedIn)await run('sync');return;}
   if(b.dataset.account){if(busy)return;provider=b.dataset.p;await doAction(b.dataset.account);return;}
   if(b.dataset.device!=null){if(busy)return;const d=state[provider].devices[+b.dataset.device];if(await run('selectDevice',{id:d.id}))navigate('home');return;}
   if(b.dataset.remove!=null){if(busy)return;const d=state[provider].devices[+b.dataset.remove];await run('removeDevice',{id:d.id});return;}

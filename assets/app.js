@@ -9,8 +9,38 @@ let provider='water',view='home',busy=false,error='',prepared=null,captcha='',co
 let loginValues={phone:'',password:'',captcha:'',code:''};
 let loginMode='choice',loginReturnView='home';
 const deviceValues={water:'',bath:''},paymentNames={21:'支付宝免密',91:'慧生活钱包'};
-let paymentType=21,lastPage='',sheetFocus=null,sheetClosing=false,pointerMotion=true,billPrepared=null;
-const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches||!pointerMotion;
+let paymentType=21,lastPage='',lastProvider='',sheetFocus=null,sheetClosing=false,pointerMotion=true,billPrepared=null;
+const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
+const reduceMotion=()=>motionPreference.matches||!pointerMotion;
+const motionAnimations=new Set();
+let viewTransition=null;
+function animate(node,frames,duration,options={}){
+  const tokens=getComputedStyle(document.documentElement);
+  const animation=node.animate(frames,{duration:parseFloat(tokens.getPropertyValue('--motion-'+duration)),easing:tokens.getPropertyValue('--ease-out').trim(),...options});
+  motionAnimations.add(animation);
+  animation.finished.then(()=>motionAnimations.delete(animation),()=>motionAnimations.delete(animation));
+  return animation;
+}
+function finishMotion(){motionAnimations.forEach(a=>a.finish());}
+motionPreference.addEventListener('change',()=>{if(motionPreference.matches)finishMotion();});
+// 离场副本只用于短暂淡出，不保留表单值，也不参与焦点或点击。
+function captureView(node){
+  const opacity=getComputedStyle(node).opacity,rect=node.getBoundingClientRect(),copy=node.cloneNode(true);
+  copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+  copy.querySelectorAll('input').forEach(n=>{n.value='';n.removeAttribute('value');});
+  copy.inert=true;copy.setAttribute('aria-hidden','true');copy.classList.add('motion-ghost');
+  Object.assign(copy.style,{left:rect.left+'px',top:rect.top+scrollY+'px',width:rect.width+'px',height:rect.height+'px',opacity});
+  return copy;
+}
+function crossfade(previous,current){
+  if(!previous)return;
+  document.body.append(previous);
+  const exit=animate(previous,[{opacity:previous.style.opacity},{opacity:0}],'view');
+  const enter=animate(current,[{opacity:0},{opacity:1}],'view');
+  const transition={clear(){previous.remove();exit.cancel();enter.cancel();if(viewTransition===transition)viewTransition=null;}};
+  viewTransition=transition;
+  enter.finished.then(()=>transition.clear(),()=>transition.clear());
+}
 const pending=new Map();
 const names={water:'慧生活798',bath:'住理生活'},verbs={water:'接水',bath:'洗澡'};
 function bridge(action,payload={}) {
@@ -23,8 +53,8 @@ window.nativeResult=(id,result)=>{const p=pending.get(id);if(!p)return;pending.d
 function toast(text){el('toast').textContent=text;el('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el('toast').classList.remove('visible'),4500);}
 const money=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v))?Number(v).toFixed(2):'—';
 function btn(label,action,kind='primary',extra=''){return `<button class="${kind}" data-action="${action}" ${busy?'disabled':''} ${extra}>${label}</button>`;}
-function nav(){return `<nav class="nav" aria-label="主导航">${[['home','home','日常'],['devices','device','设备'],['account','user','我的']].map(([id,i,t])=>`<button data-nav="${id}" class="${view===id?'active':''}">${icon(i)}<span>${t}</span></button>`).join('')}</nav>`;}
-function switcher(){return `<div class="switcher" role="group" aria-label="选择服务">${['water','bath'].map(p=>`<button class="service ${p} ${provider===p?'selected':''}" data-provider="${p}" aria-pressed="${provider===p}">${provider===p?'<span class="selected-dot"></span>':''}${icon(p==='water'?'drop':'bath')}<strong>${verbs[p]}</strong><small>${names[p]}</small></button>`).join('')}</div>`;}
+function nav(){return `<nav class="nav" data-selected="${view}" aria-label="主导航"><span class="nav-marker" aria-hidden="true"></span>${[['home','home','日常'],['devices','device','设备'],['account','user','我的']].map(([id,i,t])=>`<button data-nav="${id}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${t}</span></button>`).join('')}</nav>`;}
+function switcher(){return `<div class="switcher" data-selected="${provider}" role="group" aria-label="选择服务"><span class="service-marker" aria-hidden="true"></span>${['water','bath'].map(p=>`<button class="service ${p} ${provider===p?'selected':''}" data-provider="${p}" aria-pressed="${provider===p}"><span class="selected-dot" aria-hidden="true"></span>${icon(p==='water'?'drop':'bath')}<strong>${verbs[p]}</strong><small>${names[p]}</small></button>`).join('')}</div>`;}
 function statusBlock(){return `<div id="feedback"><div class="error-box ${error?'':'hidden'}" role="alert">${escape(error)}</div></div>`;}
 function selectedDevice(){return (state[provider].devices||[]).find(d=>d.id===state[provider].selected);}
 function deviceList(){
@@ -40,13 +70,13 @@ function activePanel(){
 function home(){
   const s=state[provider],other=provider==='water'?'bath':'water',device=selectedDevice();
   const content=!s.loggedIn?`<section class="panel login-prompt"><div class="empty-icon">${icon('lock')}</div><h2>${names[provider]}</h2><span class="muted">${s.expired?'登录已过期':'未登录'}</span>${btn('登录','loginView')}</section>`:s.active?activePanel():device?`<section class="panel current-device"><div class="device-heading"><span>当前设备</span><button class="text-button" data-nav="devices">更换</button></div><div class="current-device-icon">${icon(provider==='water'?'drop':'bath')}</div><h2>${escape(device.name)}</h2>${device.location?.trim()?`<p class="device-location">${escape(device.location)}</p>`:''}<div class="device-identifier"><span>设备号</span><strong>${escape(device.id)}</strong></div></section>`:`<section class="panel current-device empty-device"><div class="current-device-icon">${icon('device')}</div><h2>选择常用设备</h2><button class="text-button" data-nav="devices">前往设备管理 ${icon('arrow')}</button></section>`;
-  return `<div class="home-layout">${switcher()}${statusBlock()}${state[other].active?`<button class="active-other" data-provider="${other}">${verbs[other]}订单待结束 →</button>`:''}${content}${s.loggedIn?`<div class="home-start">${s.active?btn('结束'+verbs[provider],'stop','danger'):btn('开始'+verbs[provider],'beginSelected','primary',device?'':'data-unavailable="true" disabled')}</div>`:''}</div>`;
+  return `<div class="home-layout">${switcher()}<div class="service-content">${statusBlock()}${state[other].active?`<button class="active-other" data-provider="${other}">${verbs[other]}订单待结束 →</button>`:''}${content}</div>${s.loggedIn?`<div class="home-start">${s.active?btn('结束'+verbs[provider],'stop','danger'):btn('开始'+verbs[provider],'beginSelected','primary',device?'':'data-unavailable="true" disabled')}</div>`:''}</div>`;
 }
-function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}${statusBlock()}${state[provider].loggedIn?`<section class="panel device-entry"><div class="entry"><input id="device-input" aria-label="设备号" placeholder="输入设备号" autocomplete="off" value="${escape(deviceValues[provider])}"><button class="scan" data-action="scan" aria-label="扫描设备二维码">${icon('scan')}</button></div>${btn('查询设备','prepare')}</section>`:btn('登录','loginView')}<div class="section-title"><span>常用设备</span></div>${deviceList()}`;}
+function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}<div class="service-content">${statusBlock()}${state[provider].loggedIn?`<section class="panel device-entry"><div class="entry"><input id="device-input" aria-label="设备号" placeholder="输入设备号" autocomplete="off" value="${escape(deviceValues[provider])}"><button class="scan" data-action="scan" aria-label="扫描设备二维码">${icon('scan')}</button></div>${btn('查询设备','prepare')}</section>`:btn('登录','loginView')}<div class="section-title"><span>常用设备</span></div>${deviceList()}</div>`;}
 
 function account(){return `<h1 class="page-title">我的</h1>${statusBlock()}${['water','bath'].map(p=>{
   const s=state[p];return `<section class="panel account-card"><div class="account-header"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="account-balance"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>${money(s.balance)==='—'?'—':'¥ '+money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
-}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.2 ${icon('arrow')}</span></button>`;}
+}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.3 ${icon('arrow')}</span></button>`;}
 function login(){
   const heading=`<button class="back" data-action="loginBack" aria-label="返回">${icon('back')}</button><h1 class="page-title">${names[provider]}</h1>${statusBlock()}`;
   if(loginMode==='choice')return `${heading}<div class="login-options" aria-label="选择登录方式">${btn('手机号登录','phoneLoginView','secondary')}${btn('支付宝登录','loginAlipay','secondary')}</div>`;
@@ -66,7 +96,14 @@ function patchNode(current,next){
 }
 function render(){
   const content=view==='home'?home():view==='devices'?devices():view==='account'?account():login();
-  const key=view+':'+provider+(view==='login'?':'+loginMode:''),changed=key!==lastPage;
+  const key=view+(view==='login'?':'+provider+':'+loginMode:''),changed=key!==lastPage;
+  const serviceChanged=provider!==lastProvider&&(view==='home'||view==='devices');
+  let previous=null;
+  if(lastPage&&(changed||serviceChanged)){
+    viewTransition?.clear();
+    // 登录表单直接切换，避免把凭据复制进离场画面。
+    if(!reduceMotion()&&view!=='login'&&!lastPage.startsWith('login'))previous=captureView(changed?el('page'):el('page').querySelector('.service-content'));
+  }
   const template=document.createElement('template');
   template.innerHTML=`<header><div class="brand">${icon('drop')}一水生活</div><i class="network-progress ${busy?'loading':''}" aria-label="正在加载"></i></header><main id="page">${content}</main><div id="navigation">${view!=='login'?nav():''}</div>`;
   if(!lastPage)el('app').append(template.content.cloneNode(true));
@@ -76,8 +113,8 @@ function render(){
     if(changed)el('page').replaceWith(fresh.querySelector('#page').cloneNode(true));else patchNode(el('page'),fresh.querySelector('#page'));
     patchNode(el('navigation'),fresh.querySelector('#navigation'));
   }
-  if(changed&&lastPage&&!reduceMotion())el('page').animate([{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'translateY(0)'}],{duration:200,easing:'cubic-bezier(.22,1,.36,1)'});
-  lastPage=key;updateBusy();
+  crossfade(previous,changed?el('page'):el('page').querySelector('.service-content'));
+  lastPage=key;lastProvider=provider;updateBusy();
 }
 function updateBusy(){
   document.querySelectorAll('button').forEach(b=>{if(b.dataset.action!=='close')b.disabled=busy||b.dataset.unavailable==='true';});
@@ -93,13 +130,16 @@ async function run(action,payload={},options={}){
   finally{busy=false;render();updateBusy();}
 }
 function sheet(html){
-  if(!el('overlay').hasChildNodes())sheetFocus=document.activeElement;
+  const existing=el('overlay').querySelector('.sheet');
+  if(existing&&!sheetClosing){existing.innerHTML=`<div class="handle"></div>${html}`;existing.focus({preventScroll:true});updateBusy();return;}
+  if(!existing)sheetFocus=document.activeElement;
+  if(existing){existing.getAnimations().forEach(a=>a.cancel());existing.parentElement.getAnimations().forEach(a=>a.cancel());}
   sheetClosing=false;el('overlay').innerHTML=`<div class="modal-backdrop"><div class="sheet" role="dialog" aria-modal="true" aria-label="操作确认" tabindex="-1"><div class="handle"></div>${html}</div></div>`;
   el('app').inert=true;document.body.style.overflow='hidden';
   const panel=el('overlay').querySelector('.sheet'),back=panel.parentElement;
   if(!reduceMotion()){
-    back.animate([{opacity:0},{opacity:1}],{duration:180});
-    panel.animate([{transform:'translateY(32px)',opacity:0},{transform:'translateY(0)',opacity:1}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});
+    animate(back,[{opacity:0},{opacity:1}],'panel');
+    animate(panel,[{transform:'scale(.96)',opacity:0},{transform:'scale(1)',opacity:1}],'panel');
   }
   panel.focus({preventScroll:true});updateBusy();
 }
@@ -108,9 +148,11 @@ function closeSheet(){
   sheetClosing=true;prepared=null;billPrepared=null;back.inert=true;
   const finish=()=>{if(el('overlay').firstElementChild!==back)return;back.remove();sheetClosing=false;el('app').inert=false;document.body.style.overflow='';if(sheetFocus?.isConnected)sheetFocus.focus({preventScroll:true});};
   if(reduceMotion()){finish();return;}
-  const panel=back.querySelector('.sheet');back.getAnimations().forEach(a=>a.cancel());panel.getAnimations().forEach(a=>a.cancel());
-  back.animate([{opacity:1},{opacity:0}],{duration:160,fill:'forwards'});
-  panel.animate([{transform:'translateY(0)',opacity:1},{transform:'translateY(20px)',opacity:0}],{duration:160,easing:'ease-out',fill:'forwards'}).finished.then(finish,finish);
+  const panel=back.querySelector('.sheet'),backOpacity=getComputedStyle(back).opacity;
+  const {opacity,transform}=getComputedStyle(panel);
+  back.getAnimations().forEach(a=>a.cancel());panel.getAnimations().forEach(a=>a.cancel());
+  animate(back,[{opacity:backOpacity},{opacity:0}],'exit',{fill:'forwards'});
+  animate(panel,[{transform,opacity},{transform:'scale(.96)',opacity:0}],'exit',{fill:'forwards'}).finished.then(finish,finish);
 }
 function showPrepared(d,intent='start'){
   prepared=d;const methods=d.payments||[];paymentType=methods.includes(21)?21:methods.includes(91)?91:0;
@@ -164,9 +206,9 @@ async function doAction(action){
   }
 }
 document.addEventListener('input',e=>{if(e.target.dataset.field)loginValues[e.target.dataset.field]=e.target.value;if(e.target.id==='device-input')deviceValues[provider]=e.target.value;});
-document.addEventListener('pointerdown',()=>{pointerMotion=true;});
+document.addEventListener('pointerdown',()=>{pointerMotion=true;delete document.documentElement.dataset.keyboard;});
 document.addEventListener('keydown',e=>{
-  pointerMotion=false;const panel=el('overlay').querySelector('.sheet');if(!panel)return;
+  pointerMotion=false;document.documentElement.dataset.keyboard='true';finishMotion();const panel=el('overlay').querySelector('.sheet');if(!panel)return;
   if(e.key==='Escape'&&!busy){e.preventDefault();closeSheet();}
   if(e.key==='Tab'){
     const items=[...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),a[href],[tabindex="0"]')];if(!items.length){e.preventDefault();return;}

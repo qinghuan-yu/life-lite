@@ -46,7 +46,7 @@ function devices(){return `<h1 class="page-title">设备管理</h1>${switcher()}
 
 function account(){return `<h1 class="page-title">我的</h1>${statusBlock()}${['water','bath'].map(p=>{
   const s=state[p];return `<section class="panel account-card"><div class="account-header"><div><h3>${names[p]}</h3><span>${s.loggedIn?escape(s.phone):s.expired?'登录已过期':'未登录'}</span></div>${icon(p==='water'?'drop':'bath')}</div>${s.loggedIn?`<div class="account-balance"><span>${p==='bath'?escape(s.project||'余额'):'钱包'}</span><strong>${money(s.balance)==='—'?'—':'¥ '+money(s.balance)}</strong></div><div class="actions"><button class="secondary" data-account="refresh" data-p="${p}">刷新</button><button class="secondary" data-account="bills" data-p="${p}">账单</button></div>${p==='water'?'<button class="text-button" data-account="signAlipay" data-p="water">支付宝免密管理</button>':''}<div class="actions"><button class="text-button" data-account="loginView" data-p="${p}">重新登录</button><button class="text-button" data-account="logout" data-p="${p}">退出</button></div>`:`<button class="secondary" data-account="loginView" data-p="${p}">登录</button>`}</section>`;
-}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.1 ${icon('arrow')}</span></button>`;}
+}).join('')}<button class="about-row" data-action="about"><span>关于与隐私</span><span class="small">0.5.2 ${icon('arrow')}</span></button>`;}
 function login(){
   const heading=`<button class="back" data-action="loginBack" aria-label="返回">${icon('back')}</button><h1 class="page-title">${names[provider]}</h1>${statusBlock()}`;
   if(loginMode==='choice')return `${heading}<div class="login-options" aria-label="选择登录方式">${btn('手机号登录','phoneLoginView','secondary')}${btn('支付宝登录','loginAlipay','secondary')}</div>`;
@@ -157,10 +157,10 @@ async function doAction(action){
   if(action==='confirmLogout'){closeSheet();await run('logout');return;}
   if(action==='bills'){
     const d=await run('bills');if(!d)return;
-    let rows=Array.isArray(d.records)?d.records:d.records?.records||d.records?.list||d.records?.items||[];
+    let rows=Array.isArray(d.records)?d.records:d.records?.records||d.records?.list||d.records?.items||d.records?.rows||[];
     if(!Array.isArray(rows))rows=[];
-    const statuses=provider==='water'?{1:'未付款',2:'待确认',3:'已付款',4:'付款失败',5:'核算中',9:'已取消'}:{consuming:'使用中',finished:'已结束',refund:'已退款',waiting:'等待确认'};
-    sheet(`<h2>账单</h2>${rows.length?rows.slice(0,20).map(r=>`<div class="bill"><div class="bill-head"><span>${escape(r.dev?.name||r.device_name||r.devName||r.name||'设备消费')}</span><strong>¥ ${money(r.consume_money??r.payment??r.amount)}</strong></div><small>${escape(statuses[r.status]||r.status||'待确认')} · ${escape(r.order_id||r.id||'')}</small>${provider==='water'&&[1,4].includes(r.status)?`<button class="text-button" data-bill="${escape(r.id)}">支付宝支付</button>`:''}</div>`).join(''):'<div class="empty-line">暂无账单</div>'}<div class="actions">${btn('刷新','bills','secondary')}${btn('关闭','close','secondary')}</div>`);return;
+    const statuses=provider==='water'?{1:'未付款',2:'待确认',3:'已付款',4:'付款失败',5:'核算中',9:'已取消'}:{consuming:'使用中',finished:'已结束',refund:'已退款',waiting:'等待确认',cancled:'已取消',canceled:'已取消',cancelled:'已取消'};
+    sheet(`<h2>${provider==='bath'?'近30天账单':'账单'}</h2>${rows.length?rows.map(r=>`<div class="bill"><div class="bill-head"><span>${escape(r.dev?.name||r.device_name||r.devName||r.name||'设备消费')}</span><strong>¥ ${money(r.consume_money??r.payment??r.amount)}</strong></div><small>${escape(statuses[r.status]||r.status||'待确认')}${r.create_at?' · '+escape(r.create_at):''} · ${escape(r.order_id||r.id||'')}</small>${provider==='water'&&[1,4].includes(r.status)?`<button class="text-button" data-bill="${escape(r.id)}">支付宝支付</button>`:''}</div>`).join(''):'<div class="empty-line">暂无账单</div>'}<div class="actions">${btn('刷新','bills','secondary')}${btn('关闭','close','secondary')}</div>`);return;
   }
 }
 document.addEventListener('input',e=>{if(e.target.dataset.field)loginValues[e.target.dataset.field]=e.target.value;if(e.target.id==='device-input')deviceValues[provider]=e.target.value;});

@@ -492,7 +492,14 @@ public class Api {
             if(data instanceof JSONObject) {
                 JSONObject d=(JSONObject)data;data=d.opt("records");if(data==null)data=d.opt("items");if(data==null)data=d.opt("list");
             }
-        } else data=z("consume/list_record_by_staffid",obj("staff_id",session(p).getJSONObject("user_info").get("id"),"page",1,"page_size",20));
+        } else {
+            // 消费记录接口按起止时间查询，不使用充值记录的分页参数。
+            TimeZone zone=TimeZone.getTimeZone("Asia/Shanghai");
+            java.text.SimpleDateFormat format=new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.ROOT);format.setTimeZone(zone);
+            Calendar end=Calendar.getInstance(zone);end.set(Calendar.HOUR_OF_DAY,23);end.set(Calendar.MINUTE,59);end.set(Calendar.SECOND,59);end.set(Calendar.MILLISECOND,0);
+            Calendar start=(Calendar)end.clone();start.add(Calendar.DAY_OF_MONTH,-30);
+            data=z("consume/list_record_by_staffid",obj("staff_id",session(p).getJSONObject("user_info").get("id"),"start",format.format(start.getTime()),"end",format.format(end.getTime())));
+        }
         return obj("records",data==null?new JSONArray():data);
     }
     private JSONObject saveDevice(String p,JSONObject a) throws Exception {
